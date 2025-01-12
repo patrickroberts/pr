@@ -54,7 +54,8 @@ public:
   template <class IteratorT, class SentinelT>
   constexpr any_iterator(IteratorT &&iterator, SentinelT &&sentinel)
       : iterator_ptr_(in_place_iterator_type_<IteratorT, SentinelT>,
-                      auto(iterator), auto(sentinel)) {}
+                      static_cast<std::decay_t<IteratorT>>(iterator),
+                      static_cast<std::decay_t<SentinelT>>(sentinel)) {}
 
   any_iterator() = delete;
 

@@ -2,6 +2,8 @@
 
 #include <pr/detail/intrusive_small_ptr.hpp>
 
+#include <typeinfo>
+
 namespace pr::detail {
 
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>

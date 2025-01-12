@@ -23,7 +23,7 @@ static_assert([] {
 ```
 
 ## Features:
-- C++23 implementation (uses `if consteval`, `std::unreachable()`, and `auto`-cast)
+- C++23 implementation
 - Fully constexpr and SFINAE-friendly
 - Supports:
   * Ranges of any iterator category including `contiguous_range<R>`

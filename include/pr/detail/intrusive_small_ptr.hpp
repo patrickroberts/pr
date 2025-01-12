@@ -34,7 +34,7 @@ public:
     if constexpr (sizeof(AdaptorT) <= sizeof(InplaceT) and
                   alignof(AdaptorT) <= alignof(InplaceT)) {
       // placement new is not allowed in a constant expression
-      if not consteval {
+      if (not std::is_constant_evaluated()) {
         ::new (&inplace_) AdaptorT(static_cast<ArgsT &&>(args)...);
         index_ = index_type::is_inplace;
         return;
