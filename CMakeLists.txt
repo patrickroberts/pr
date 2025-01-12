@@ -27,4 +27,5 @@ target_compile_options(
 target_include_directories(patrickroberts
                            INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
-add_subdirectory(test EXCLUDE_FROM_ALL)
+enable_testing()
+add_subdirectory(test)
