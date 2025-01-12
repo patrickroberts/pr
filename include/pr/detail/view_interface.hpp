@@ -9,8 +9,7 @@ class view_interface;
 
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>
 class constant_view_interface {
-  using iterator_ = any_iterator<ElementT, KindV & any_kind::contiguous,
-                                 ReferenceT, DifferenceT>;
+  using iterator_ = any_iterator<ElementT, KindV, ReferenceT, DifferenceT>;
 
 public:
   [[nodiscard]] constexpr virtual auto begin() const -> iterator_ = 0;
@@ -19,8 +18,7 @@ public:
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>
   requires disables_kind<KindV, any_kind::constant>
 class constant_view_interface<ElementT, KindV, ReferenceT, DifferenceT> {
-  using iterator_ = any_iterator<ElementT, KindV & any_kind::contiguous,
-                                 ReferenceT, DifferenceT>;
+  using iterator_ = any_iterator<ElementT, KindV, ReferenceT, DifferenceT>;
 
 public:
   [[nodiscard]] constexpr virtual auto begin() -> iterator_ = 0;

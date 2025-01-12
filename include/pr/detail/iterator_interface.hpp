@@ -111,15 +111,27 @@ class contiguous_iterator_interface<ElementT, KindV, ReferenceT, DifferenceT>
                                               DifferenceT> {};
 
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>
-class iterator_interface
+class common_iterator_interface
+    : public contiguous_iterator_interface<ElementT, KindV, ReferenceT,
+                                           DifferenceT> {};
+
+template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>
+  requires disables_kind<KindV, any_kind::common>
+class common_iterator_interface<ElementT, KindV, ReferenceT, DifferenceT>
     : public contiguous_iterator_interface<ElementT, KindV, ReferenceT,
                                            DifferenceT> {
 public:
-  using iterator_interface::forward_iterator_interface::operator==;
+  using common_iterator_interface::contiguous_iterator_interface::operator==;
 
   [[nodiscard]] constexpr virtual auto
   operator==(std::default_sentinel_t other) const -> bool = 0;
+};
 
+template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT>
+class iterator_interface
+    : public common_iterator_interface<ElementT, KindV, ReferenceT,
+                                       DifferenceT> {
+public:
   [[nodiscard]] constexpr virtual auto
   type() const noexcept -> const std::type_info & = 0;
 

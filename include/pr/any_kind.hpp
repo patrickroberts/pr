@@ -13,6 +13,8 @@ enum class any_kind : unsigned char {
   constant      = 0b00100000,
   copyable      = 0b01000000,
   sized         = 0b10000000,
+  common        = random_access | sized,
+  simple        = constant,
   // clang-format on
 };
 

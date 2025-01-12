@@ -11,14 +11,14 @@ template <class ElementT, any_kind KindV = any_kind::input,
           class DifferenceT = std::ptrdiff_t>
 class any_view : public std::ranges::view_interface<
                      any_view<ElementT, KindV, ReferenceT, DifferenceT>> {
-  using iterator_ = any_iterator<ElementT, KindV & any_kind::contiguous,
-                                 ReferenceT, DifferenceT>;
+  using iterator_ = any_iterator<ElementT, KindV, ReferenceT, DifferenceT>;
 
   template <class RangeT>
   static constexpr std::in_place_type_t<detail::view_adaptor<
       ElementT, KindV, ReferenceT, DifferenceT, std::views::all_t<RangeT>>>
       in_place_view_type_{};
 
+  static constexpr bool common_ = detail::enables_kind(KindV, any_kind::common);
   static constexpr bool constant_ =
       detail::enables_kind(KindV, any_kind::constant);
   static constexpr bool copyable_ =
@@ -74,7 +74,21 @@ public:
     return view_ptr_->begin();
   }
 
-  [[nodiscard]] constexpr auto end() const -> std::default_sentinel_t {
+  [[nodiscard]] constexpr auto end() -> iterator_
+    requires(not constant_) and common_
+  {
+    return view_ptr_->begin() + view_ptr_->size();
+  }
+
+  [[nodiscard]] constexpr auto end() const -> iterator_
+    requires constant_ and common_
+  {
+    return view_ptr_->begin() + view_ptr_->size();
+  }
+
+  [[nodiscard]] constexpr auto end() const -> std::default_sentinel_t
+    requires(not common_)
+  {
     return std::default_sentinel;
   }
 

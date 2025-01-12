@@ -46,17 +46,20 @@ public:
 
   constexpr explicit forward_iterator_adaptor()
     requires std::default_initializable<IteratorT> and
-                 std::default_initializable<SentinelT>
-  = default;
+             std::default_initializable<SentinelT>
+      : forward_iterator_adaptor(IteratorT(), SentinelT()) {}
 
   constexpr explicit forward_iterator_adaptor(IteratorT &&iterator,
                                               SentinelT &&sentinel)
       : base_(static_cast<IteratorT &&>(iterator)),
         sentinel_(static_cast<SentinelT &&>(sentinel)) {}
 
+  using base_::operator==;
+
   [[nodiscard]] constexpr auto
   operator==(const interface_ &other) const -> bool override {
-    if (typeid(IteratorT) != other.type()) [[unlikely]] {
+    if (typeid(IteratorT) != other.type()) {
+      // comparing iterators from different views is UB
       std::unreachable();
     }
 
@@ -74,9 +77,11 @@ class forward_iterator_adaptor<ElementT, KindV, ReferenceT, DifferenceT,
   using base_ = input_iterator_adaptor<ElementT, KindV, ReferenceT, DifferenceT,
                                        IteratorT>;
 
+public:
   [[no_unique_address]] SentinelT sentinel_;
 
-public:
+  using base_::base_;
+
   constexpr forward_iterator_adaptor(IteratorT &&iterator, SentinelT &&sentinel)
       : base_(static_cast<IteratorT &&>(iterator)),
         sentinel_(static_cast<SentinelT &&>(sentinel)) {}
@@ -126,6 +131,7 @@ public:
   [[nodiscard]] constexpr auto
   operator<=>(const interface_ &other) const -> std::partial_ordering override {
     if (typeid(IteratorT) != other.type()) {
+      // comparing iterators from different views is UB
       std::unreachable();
     }
 
@@ -135,6 +141,7 @@ public:
   [[nodiscard]] constexpr auto
   operator-(const interface_ &other) const -> difference_type override {
     if (typeid(IteratorT) != other.type()) {
+      // subtracting iterators from different views is UB
       std::unreachable();
     }
 
@@ -197,32 +204,49 @@ public:
 
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT,
           class IteratorT, class SentinelT>
-class iterator_adaptor final
+class common_iterator_adaptor
     : public contiguous_iterator_adaptor<ElementT, KindV, ReferenceT,
                                          DifferenceT, IteratorT, SentinelT> {
-  using interface_ =
-      iterator_interface<ElementT, KindV, ReferenceT, DifferenceT>;
-
 public:
-  using iterator_adaptor::contiguous_iterator_adaptor::
+  using common_iterator_adaptor::contiguous_iterator_adaptor::
       contiguous_iterator_adaptor;
+};
 
-  constexpr iterator_adaptor(const iterator_adaptor &) = default;
-  constexpr iterator_adaptor(iterator_adaptor &&) noexcept = default;
+template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT,
+          class IteratorT, class SentinelT>
+  requires disables_kind<KindV, any_kind::common>
+class common_iterator_adaptor<ElementT, KindV, ReferenceT, DifferenceT,
+                              IteratorT, SentinelT>
+    : public contiguous_iterator_adaptor<ElementT, KindV, ReferenceT,
+                                         DifferenceT, IteratorT, SentinelT> {
+public:
+  using common_iterator_adaptor::contiguous_iterator_adaptor::
+      contiguous_iterator_adaptor;
+  using common_iterator_adaptor::contiguous_iterator_adaptor::operator==;
 
   [[nodiscard]] constexpr auto operator==(
       [[maybe_unused]] std::default_sentinel_t other) const -> bool override {
     return this->iterator_ == this->sentinel_;
   }
+};
+
+template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT,
+          class IteratorT, class SentinelT>
+class iterator_adaptor final
+    : public common_iterator_adaptor<ElementT, KindV, ReferenceT, DifferenceT,
+                                     IteratorT, SentinelT> {
+  using interface_ =
+      iterator_interface<ElementT, KindV, ReferenceT, DifferenceT>;
+
+public:
+  using iterator_adaptor::common_iterator_adaptor::common_iterator_adaptor;
 
   auto copy_to(void *destination) const -> void override {
-    ::new (destination)
-        iterator_adaptor(static_cast<const iterator_adaptor &>(*this));
+    ::new (destination) iterator_adaptor(*this);
   }
 
   [[nodiscard]] constexpr auto copy() const -> interface_ * override {
-    return new iterator_adaptor(*static_cast<const iterator_adaptor *>(
-        static_cast<const void *>(this)));
+    return new iterator_adaptor(*this);
   }
 
   auto move_to(void *destination) noexcept -> void override {
@@ -234,6 +258,11 @@ public:
   type() const noexcept -> const std::type_info & override {
     return typeid(IteratorT);
   }
+
+// GCC bug: use of destructor before definition
+#if defined __GNUG__ and not defined __clang__
+  constexpr ~iterator_adaptor() noexcept override {}
+#endif
 };
 
 template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT,
@@ -241,20 +270,10 @@ template <class ElementT, any_kind KindV, class ReferenceT, class DifferenceT,
   requires disables_kind<KindV, any_kind::forward>
 class iterator_adaptor<ElementT, KindV, ReferenceT, DifferenceT, IteratorT,
                        SentinelT>
-    final
-    : public contiguous_iterator_adaptor<ElementT, KindV, ReferenceT,
-                                         DifferenceT, IteratorT, SentinelT> {
+    final : public common_iterator_adaptor<ElementT, KindV, ReferenceT,
+                                           DifferenceT, IteratorT, SentinelT> {
 public:
-  using iterator_adaptor::contiguous_iterator_adaptor::
-      contiguous_iterator_adaptor;
-
-  constexpr iterator_adaptor(const iterator_adaptor &) = default;
-  constexpr iterator_adaptor(iterator_adaptor &&) noexcept = default;
-
-  [[nodiscard]] constexpr auto operator==(
-      [[maybe_unused]] std::default_sentinel_t other) const -> bool override {
-    return this->iterator_ == this->sentinel_;
-  }
+  using iterator_adaptor::common_iterator_adaptor::common_iterator_adaptor;
 
   auto move_to(void *destination) noexcept -> void override {
     ::new (destination)
@@ -265,6 +284,11 @@ public:
   type() const noexcept -> const std::type_info & override {
     return typeid(IteratorT);
   }
+
+// GCC bug: use of destructor before definition
+#if defined __GNUG__ and not defined __clang__
+  constexpr ~iterator_adaptor() noexcept override {}
+#endif
 };
 
 } // namespace pr::detail

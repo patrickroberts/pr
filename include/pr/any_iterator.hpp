@@ -22,8 +22,7 @@ template <class ElementT, any_kind KindV = any_kind::input,
 class any_iterator : public detail::iterator_concept_trait<KindV> {
   template <class IteratorT, class SentinelT = IteratorT>
   static constexpr std::in_place_type_t<detail::iterator_adaptor<
-      ElementT, KindV, ReferenceT, DifferenceT, std::decay_t<IteratorT>,
-      std::decay_t<SentinelT>>>
+      ElementT, KindV, ReferenceT, DifferenceT, IteratorT, SentinelT>>
       in_place_iterator_type_{};
 
   static constexpr bool forward_ =
@@ -34,6 +33,7 @@ class any_iterator : public detail::iterator_concept_trait<KindV> {
       detail::enables_kind(KindV, any_kind::random_access);
   static constexpr bool contiguous_ =
       detail::enables_kind(KindV, any_kind::contiguous);
+  static constexpr bool common_ = detail::enables_kind(KindV, any_kind::common);
 
   // inplace storage is large enough for vtable pointer and two T *
   using iterator_ptr_type_ = detail::intrusive_small_ptr<
@@ -50,12 +50,11 @@ public:
 
   static constexpr any_kind kind = KindV;
 
-  /// @private
   template <class IteratorT, class SentinelT>
-  constexpr any_iterator(IteratorT &&iterator, SentinelT &&sentinel)
+  constexpr any_iterator(IteratorT iterator, SentinelT sentinel)
       : iterator_ptr_(in_place_iterator_type_<IteratorT, SentinelT>,
-                      static_cast<std::decay_t<IteratorT>>(iterator),
-                      static_cast<std::decay_t<SentinelT>>(sentinel)) {}
+                      static_cast<IteratorT &&>(iterator),
+                      static_cast<SentinelT &&>(sentinel)) {}
 
   any_iterator() = delete;
 
@@ -106,7 +105,8 @@ public:
   operator==(const any_iterator &other) const -> bool
     requires forward_
   {
-    return *iterator_ptr_ == *other.iterator_ptr_;
+    // explicit method call to prevent ambiguity
+    return iterator_ptr_->operator==(*other.iterator_ptr_);
   }
 
   constexpr auto operator--() -> any_iterator &
@@ -192,7 +192,9 @@ public:
   }
 
   [[nodiscard]] constexpr auto
-  operator==(std::default_sentinel_t other) const -> bool {
+  operator==(std::default_sentinel_t other) const -> bool
+    requires(not common_)
+  {
     return *iterator_ptr_ == other;
   }
 

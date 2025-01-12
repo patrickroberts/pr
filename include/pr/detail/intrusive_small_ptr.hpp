@@ -119,15 +119,16 @@ public:
     switch (index_) {
     case index_type::is_inplace:
       static_cast<InterfaceT *>(static_cast<void *>(&inplace_))->~InterfaceT();
-      // allows multiple calls to destructor to be valid
-      pointer_ = nullptr;
-      index_ = index_type::is_pointer;
       break;
     case index_type::is_pointer:
       // deleting nullptr is a no-op, so no need to check
-      ::delete pointer_;
+      delete pointer_;
       break;
     }
+
+    // allows destructor to be called multiple times
+    pointer_ = nullptr;
+    index_ = index_type::is_pointer;
   }
 };
 
