@@ -7,11 +7,15 @@ project(
 
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-include(cmake/pre-commit.cmake)
-
+option(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS
+       "Install pre-commit hooks during configuration" ON)
 option(PATRICK_ROBERTS_USE_LIBCXX
        "Use libc++ standard library when compiling patrickroberts with Clang"
        OFF)
+
+if(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS)
+  include(cmake/pre-commit.cmake)
+endif()
 
 add_library(patrickroberts INTERFACE)
 target_compile_features(patrickroberts INTERFACE cxx_std_23)
