@@ -1,0 +1,5 @@
+add_executable(test_any_iterator any_iterator.cpp)
+target_link_libraries(test_any_iterator PRIVATE patrickroberts)
+
+add_executable(test_any_view any_view.cpp)
+target_link_libraries(test_any_view PRIVATE patrickroberts)

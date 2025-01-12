@@ -1,0 +1,11 @@
+CompileFlags:
+  Add: -D_GLIBCXX_DO_NOT_USE_BUILTIN_TRAITS
+  Remove:
+    [
+      -fconcepts-diagnostics-depth=*,
+      -fdeps-format=*,
+      -fmodule-mapper=*,
+      -fmodules-ts,
+    ]
+Diagnostics:
+  UnusedIncludes: None
