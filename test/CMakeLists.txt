@@ -5,3 +5,7 @@ add_test(NAME test_any_iterator COMMAND any_iterator)
 add_executable(any_view any_view.cpp)
 target_link_libraries(any_view PRIVATE patrickroberts)
 add_test(NAME test_any_view COMMAND any_view)
+
+add_executable(prfloat prfloat.cpp)
+target_link_libraries(prfloat PRIVATE patrickroberts)
+add_test(NAME test_prfloat COMMAND prfloat)
