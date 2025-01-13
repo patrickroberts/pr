@@ -44,10 +44,12 @@ template <class From, class To>
 concept common_reference_same_as =
     std::same_as<std::common_reference_t<From, To>, To>;
 
-template <class IteratorT, any_kind KindV, class ReferenceT, class SentinelT>
+template <class IteratorT, class SentinelT, any_kind KindV, class ReferenceT,
+          class DifferenceT>
 concept models_iterator_of =
     disables_or_models_contiguous_iterator<IteratorT, KindV> and
     common_reference_same_as<std::iter_reference_t<IteratorT>, ReferenceT> and
+    std::convertible_to<std::iter_difference_t<IteratorT>, DifferenceT> and
     std::sentinel_for<SentinelT, IteratorT>;
 
 template <class RangeT, any_kind KindV>
@@ -59,12 +61,13 @@ template <class RangeT, any_kind KindV>
 concept disables_or_models_sized_range =
     disables_kind<KindV, any_kind::sized> or std::ranges::sized_range<RangeT>;
 
-template <class MaybeConstantRangeT, any_kind KindV, class ReferenceT>
+template <class MaybeConstantRangeT, any_kind KindV, class ReferenceT,
+          class DifferenceT>
 concept models_range_of =
     std::ranges::range<MaybeConstantRangeT> and
-    models_iterator_of<std::ranges::iterator_t<MaybeConstantRangeT>, KindV,
-                       ReferenceT,
-                       std::ranges::sentinel_t<MaybeConstantRangeT>> and
+    models_iterator_of<std::ranges::iterator_t<MaybeConstantRangeT>,
+                       std::ranges::sentinel_t<MaybeConstantRangeT>, KindV,
+                       ReferenceT, DifferenceT> and
     disables_or_models_borrowed_range<MaybeConstantRangeT, KindV> and
     disables_or_models_sized_range<MaybeConstantRangeT, KindV>;
 
@@ -77,16 +80,16 @@ using const_if_enabled_t =
     std::conditional_t<detail::enables_kind(KindV, any_kind::constant),
                        const ViewT, ViewT>;
 
-template <class ViewT, any_kind KindV, class ReferenceT>
-concept models_view_of =
-    std::ranges::view<ViewT> and
-    models_range_of<const_if_enabled_t<ViewT, KindV>, KindV, ReferenceT> and
-    disables_or_models_copyable_range<ViewT, KindV>;
+template <class ViewT, any_kind KindV, class ReferenceT, class DifferenceT>
+concept models_view_of = std::ranges::view<ViewT> and
+                         models_range_of<const_if_enabled_t<ViewT, KindV>,
+                                         KindV, ReferenceT, DifferenceT> and
+                         disables_or_models_copyable_range<ViewT, KindV>;
 
-template <class RangeT, any_kind KindV, class ReferenceT>
+template <class RangeT, any_kind KindV, class ReferenceT, class DifferenceT>
 concept models_viewable_range_of =
     std::ranges::viewable_range<RangeT> and
-    models_view_of<std::views::all_t<RangeT>, KindV, ReferenceT>;
+    models_view_of<std::views::all_t<RangeT>, KindV, ReferenceT, DifferenceT>;
 
 template <class T1, class T2>
 inline constexpr bool is_instantiation_of_v = false;
@@ -98,11 +101,19 @@ inline constexpr bool is_instantiation_of_v<
     AnyViewT<ElementT1, KindV1, ReferenceT1, DifferenceT1>,
     AnyViewT<ElementT2, KindV2, ReferenceT2, DifferenceT2>> = true;
 
+template <class IteratorT, class SentinelT, class AnyIteratorT>
+concept convertible_to_any_iterator =
+    not is_instantiation_of_v<IteratorT, AnyIteratorT> and
+    models_iterator_of<IteratorT, SentinelT, AnyIteratorT::kind,
+                       std::iter_reference_t<AnyIteratorT>,
+                       std::iter_difference_t<AnyIteratorT>>;
+
 template <class RangeT, class AnyViewT>
 concept convertible_to_any_view =
     not is_instantiation_of_v<std::decay_t<RangeT>, AnyViewT> and
     models_viewable_range_of<RangeT, AnyViewT::kind,
-                             std::ranges::range_reference_t<AnyViewT>>;
+                             std::ranges::range_reference_t<AnyViewT>,
+                             std::ranges::range_difference_t<AnyViewT>>;
 
 template <class InterfaceT>
 concept interface_copyable =

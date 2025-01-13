@@ -14,6 +14,9 @@ enum class any_kind : unsigned char {
   copyable      = 0b01000000,
   sized         = 0b10000000,
   common        = random_access | sized,
+  // TODO: Is simple a better name to use than constant? any_view<T, simple>
+  // satisfies the exposition-only "simple-view", but does not (necessarily)
+  // satisfy constant_range
   simple        = constant,
   // clang-format on
 };

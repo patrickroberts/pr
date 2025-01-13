@@ -21,11 +21,11 @@ public:
       : view_(static_cast<ViewT &&>(view)) {}
 
   [[nodiscard]] constexpr auto begin() const -> iterator_ override {
-    if constexpr (disables_kind<KindV, any_kind::common>) {
-      return iterator_(std::ranges::begin(view_), std::ranges::end(view_));
-    } else {
+    if constexpr (detail::enables_kind(KindV, any_kind::common)) {
       // optimization: don't store end when any_view is common_range
       return iterator_(std::ranges::begin(view_), std::unreachable_sentinel);
+    } else {
+      return iterator_(std::ranges::begin(view_), std::ranges::end(view_));
     }
   }
 };
@@ -44,7 +44,12 @@ public:
       : view_(static_cast<ViewT &&>(view)) {}
 
   [[nodiscard]] constexpr auto begin() -> iterator_ override {
-    return iterator_(std::ranges::begin(view_), std::ranges::end(view_));
+    if constexpr (detail::enables_kind(KindV, any_kind::common)) {
+      // optimization: don't store end when any_view is common_range
+      return iterator_(std::ranges::begin(view_), std::unreachable_sentinel);
+    } else {
+      return iterator_(std::ranges::begin(view_), std::ranges::end(view_));
+    }
   }
 };
 

@@ -51,6 +51,8 @@ public:
   static constexpr any_kind kind = KindV;
 
   template <class IteratorT, class SentinelT>
+    requires detail::convertible_to_any_iterator<IteratorT, SentinelT,
+                                                 any_iterator>
   constexpr any_iterator(IteratorT iterator, SentinelT sentinel)
       : iterator_ptr_(in_place_iterator_type_<IteratorT, SentinelT>,
                       static_cast<IteratorT &&>(iterator),
@@ -105,8 +107,12 @@ public:
   operator==(const any_iterator &other) const -> bool
     requires forward_
   {
+#if defined __GNUG__
     // explicit method call to prevent ambiguity
     return iterator_ptr_->operator==(*other.iterator_ptr_);
+#else
+    return *iterator_ptr_ == *other.iterator_ptr_;
+#endif
   }
 
   constexpr auto operator--() -> any_iterator &
