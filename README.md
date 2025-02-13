@@ -2,6 +2,60 @@
 
 An assortment of standalone C++ utilities
 
+## [`include/pr/context.hpp`](include/pr/context.hpp)
+
+<details>
+<summary><h3 style="display:inline-block">Synopsis</h3></summary>
+
+```cpp
+namespace pr {
+
+template <class T>
+static thread_local std::add_pointer_t<T> /*context*/ = nullptr;
+
+template <class T, class... ArgsT>
+  requires std::constructible_from<T, ArgsT...>
+[[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
+    std::is_nothrow_constructible_v<T, ArgsT...>);
+
+template <class T>
+[[nodiscard]] auto get_context() noexcept -> std::add_pointer_t<T>;
+
+} // namespace pr
+```
+
+</details>
+
+---
+
+<details>
+<summary><h3 style="display:inline-block"><code>pr::make_context</code></h3></summary>
+
+```cpp
+template <class T, class... ArgsT>
+  requires std::constructible_from<T, ArgsT...>
+[[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
+    std::is_nothrow_constructible_v<T, ArgsT...>);
+```
+
+Constructs and returns an object that stores a member value-initialized by `T(std::forward<ArgsT>(args)...)`, then exchanges `/*context*/<T>` with the address of that member, storing the previous address as a second member of the object. The return type has deleted copy and move constructors, and assigns the previous address to `/*context*/<T>` upon destruction.
+
+</details>
+
+---
+
+<details>
+<summary><h3 style="display:inline-block"><code>pr::get_context</code></h3></summary>
+
+```cpp
+template <class T>
+[[nodiscard]] auto get_context() noexcept -> std::add_pointer_t<T>;
+```
+
+Returns the current address stored in `/*context*/<T>`.
+
+</details>
+
 ## [`include/pr/shared_view.hpp`](include/pr/shared_view.hpp)
 
 <details>
@@ -14,23 +68,22 @@ namespace ranges {
 template <class T>
 concept copyable_view = /* see description */;
 
-template <std::ranges::view ViewT>
-  requires(not std::copyable<ViewT>)
-class shared_view : public std::ranges::view_interface<shared_view<ViewT>> {
-  std::shared_ptr<ViewT> base_; // exposition-only
+template <std::ranges::viewable_range RangeT>
+  requires std::is_object_v<RangeT>
+class shared_view : public std::ranges::view_interface<shared_view<RangeT>> {
+  std::shared_ptr<RangeT> base_; // exposition-only
 
 public:
-  shared_view() requires std::default_initializable<ViewT>;
+  shared_view() requires std::default_initializable<RangeT>;
 
-  explicit shared_view(ViewT base);
+  explicit shared_view(RangeT &&base);
 
-  auto begin() -> std::ranges::iterator_t<ViewT>;
+  auto base() const noexcept -> RangeT &;
 
-  auto end() -> std::ranges::sentinel_t<ViewT>;
+  auto begin() -> std::ranges::iterator_t<RangeT>;
+
+  auto end() -> std::ranges::sentinel_t<RangeT>;
 };
-
-template <std::ranges::viewable_range RangeT>
-shared_view(RangeT &&) -> shared_view<std::views::all_t<RangeT>>;
 
 namespace views {
 
@@ -63,7 +116,7 @@ namespace pr::ranges {
 
   template <class T>
   concept copyable_view =
-    std::copyable<T> and std::ranges::view<T>;
+    std::ranges::view<T> and std::copyable<T>;
 
 }
 ```
@@ -99,58 +152,56 @@ Given an expression `e` of type `T`, the expression `pr::views::shared(e)` is ex
 <details>
 <summary><h4 style="display:inline-block">Data members</h4></summary>
 
-| Member object     | Definition                                                                   |
-| ----------------- | ---------------------------------------------------------------------------- |
-| `base_` (private) | A `std::shared_ptr` of the underlying view. (exposition-only member object*) |
+| Member object     | Definition                                                                    |
+| ----------------- | ----------------------------------------------------------------------------- |
+| `base_` (private) | A `std::shared_ptr` of the underlying range. (exposition-only member object*) |
 
 </details>
 
 <details>
 <summary><h4 style="display:inline-block">Member functions</h4></summary>
 
-#### `pr::ranges::shared_view<ViewT>::shared_view`
+#### `pr::ranges::shared_view<RangeT>::shared_view`
 
-| <!-- -->                                                    | <!-- --> |
-| ----------------------------------------------------------- | -------- |
-| `shared_view() requires std::default_initializable<ViewT>;` | (1)      |
-| `explicit shared_view(ViewT base);`                         | (2)      |
+| <!-- -->                                                     | <!-- --> |
+| ------------------------------------------------------------ | -------- |
+| `shared_view() requires std::default_initializable<RangeT>;` | (1)      |
+| `explicit shared_view(RangeT &&base);`                       | (2)      |
 
 Constructs a `shared_view`.
 
-1) Default constructor. Initializes `base_` as if by `base_(std::make_shared<ViewT>())`.
-2) Initializes the underlying `base_` with `std::make_shared<ViewT>(std::move(base))`.
+1) Default constructor. Initializes `base_` as if by `base_(std::make_shared<RangeT>())`.
+2) Initializes the underlying `base_` with `std::make_shared<RangeT>(std::move(base))`.
 
 ---
 
-#### `pr::ranges::shared_view<ViewT>::begin`
+#### `pr::ranges::shared_view<RangeT>::base`
 
-| <!-- -->                                          |
-| ------------------------------------------------- |
-| `auto begin() -> std::ranges::iterator_t<ViewT>;` |
+| <!-- -->                                 |
+| ---------------------------------------- |
+| `auto base() const noexcept -> RangeT &` |
 
-Equivalent to `return std::ranges::begin(*base_);`. 
+Equivalent to `return *base_;`.
 
 ---
 
-#### `pr::ranges::shared_view<ViewT>::end`
+#### `pr::ranges::shared_view<RangeT>::begin`
 
-| <!-- -->                                        |
-| ----------------------------------------------- |
-| `auto end() -> std::ranges::iterator_t<ViewT>;` |
+| <!-- -->                                           |
+| -------------------------------------------------- |
+| `auto begin() -> std::ranges::iterator_t<RangeT>;` |
 
-Equivalent to `return std::ranges::end(*base_);`. 
+Equivalent to `return std::ranges::begin(*base_);`.
 
-</details>
+---
 
-<details>
-<summary><h4 style="display:inline-block">Deduction guides</h4></summary>
+#### `pr::ranges::shared_view<RangeT>::end`
 
-```cpp
-template <std::ranges::viewable_range RangeT>
-shared_view(RangeT &&) -> shared_view<std::views::all_t<RangeT>>;
-```
+| <!-- -->                                         |
+| ------------------------------------------------ |
+| `auto end() -> std::ranges::iterator_t<RangeT>;` |
 
-The deduction guide is provided for `pr::ranges::shared_view` to allow deduction from `range`. 
+Equivalent to `return std::ranges::end(*base_);`.
 
 </details>
 
@@ -164,7 +215,7 @@ inline constexpr bool
         std::ranges::enable_borrowed_range<T>;
 ```
 
-This specialization of `std::ranges::enable_borrowed_range` makes `shared_view` satisfy `borrowed_range` when the underlying view satisfies it. 
+This specialization of `std::ranges::enable_borrowed_range` makes `shared_view` satisfy `borrowed_range` when the underlying range satisfies it. 
 
 </details>
 </details>

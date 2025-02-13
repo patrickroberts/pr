@@ -7,38 +7,39 @@ namespace pr {
 namespace ranges {
 
 template <class T>
-concept copyable_view = std::copyable<T> and std::ranges::view<T>;
+concept copyable_view = std::ranges::view<T> and std::copyable<T>;
 
-template <std::ranges::view ViewT>
-  requires(not std::copyable<ViewT>)
-class shared_view : public std::ranges::view_interface<shared_view<ViewT>> {
-  std::shared_ptr<ViewT> base_;
+template <std::ranges::viewable_range RangeT>
+  requires std::is_object_v<RangeT>
+class shared_view : public std::ranges::view_interface<shared_view<RangeT>> {
+  std::shared_ptr<RangeT> base_;
 
 public:
   shared_view()
-    requires std::default_initializable<ViewT>
-      : base_(std::make_shared<ViewT>()) {}
+    requires std::default_initializable<RangeT>
+      : base_(std::make_shared<RangeT>()) {}
 
-  explicit shared_view(ViewT base)
-      : base_(std::make_shared<ViewT>(std::move(base))) {}
+  explicit shared_view(RangeT &&base)
+      : base_(std::make_shared<RangeT>(std::move(base))) {}
 
-  auto begin() -> std::ranges::iterator_t<ViewT> {
+  auto base() const noexcept -> RangeT & { return *base_; }
+
+  auto begin() -> std::ranges::iterator_t<RangeT> {
     return std::ranges::begin(*base_);
   }
 
-  auto end() -> std::ranges::sentinel_t<ViewT> {
+  auto end() -> std::ranges::sentinel_t<RangeT> {
     return std::ranges::end(*base_);
   }
 };
-
-template <std::ranges::viewable_range RangeT>
-shared_view(RangeT &&) -> shared_view<std::views::all_t<RangeT>>;
 
 namespace views {
 namespace detail {
 
 struct shared_fn {
   template <std::ranges::viewable_range RangeT>
+    requires std::copyable<std::views::all_t<RangeT>> or
+                 std::is_object_v<RangeT>
   constexpr auto operator()(RangeT &&range) const -> copyable_view auto {
     if constexpr (std::copyable<std::views::all_t<RangeT>>) {
       return std::views::all(std::forward<RangeT>(range));
