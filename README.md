@@ -11,15 +11,45 @@ An assortment of standalone C++ utilities
 namespace pr {
 
 template <class T>
-static thread_local std::add_pointer_t<T> /*context*/ = nullptr;
+concept /*storable*/ = std::same_as<T, std::remove_cvref_t<T>>;
 
-template <class T, class... ArgsT>
-  requires std::constructible_from<T, ArgsT...>
-[[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
-    std::is_nothrow_constructible_v<T, ArgsT...>);
+template </*storable*/ T>
+static thread_local T * /*context*/ = nullptr;
 
 template <class T>
-[[nodiscard]] auto get_context() noexcept -> std::add_pointer_t<T>;
+concept /*makeable*/ =
+    /*storable*/<std::remove_reference_t<T>> and not std::is_rvalue_reference_v<T>;
+
+template <makeable_ T>
+class /*scoped*/ {
+  using value_type = std::remove_reference_t<T>;
+
+  [[no_unique_address]] T inner_; // exposition-only
+  value_type *outer_; // exposition-only
+
+public:
+  template <class... ArgsT>
+    requires std::constructible_from<T, ArgsT...>
+  explicit /*scoped*/(ArgsT &&...args) noexcept(
+      std::is_nothrow_constructible_v<T, ArgsT...>);
+
+  /*scoped*/(const /*scoped*/ &) = delete;
+
+  /*scoped*/(/*scoped*/ &&) = delete;
+
+  ~/*scoped*/() noexcept;
+};
+
+template </*makeable*/ T, class... ArgsT>
+  requires std::constructible_from<T, ArgsT...>
+[[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
+    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*scoped*/<T>;
+
+template <class T>
+concept /*gettable*/ = /*storable*/<std::remove_const_t<T>>;
+
+template </*gettable*/ T>
+[[nodiscard]] auto get_context() noexcept -> T *;
 
 } // namespace pr
 ```
@@ -32,13 +62,13 @@ template <class T>
 <summary><h3 style="display:inline-block"><code>pr::make_context</code></h3></summary>
 
 ```cpp
-template <class T, class... ArgsT>
+template </*makeable*/ T, class... ArgsT>
   requires std::constructible_from<T, ArgsT...>
 [[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
-    std::is_nothrow_constructible_v<T, ArgsT...>);
+    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*scoped*/<T>;
 ```
 
-Constructs and returns an object that stores a member value-initialized by `T(std::forward<ArgsT>(args)...)`, then exchanges `/*context*/<T>` with the address of that member, storing the previous address as a second member of the object. The return type has deleted copy and move constructors, and assigns the previous address to `/*context*/<T>` upon destruction.
+Constructs and returns `/*scoped*/<T>`, whose constructor initializes its members as if by `inner_(std::forward<ArgsT>(args)...), outer_(std::exchange(/*context*/<value_type>, std::addressof(inner_)))`. Its destructor restores `/*context*/<value_type>` to the value of `outer_`. `T` must be a cv-unqualified non-reference or lvalue-reference type, or the instantiation is ill-formed, which can result in substitution failure when the call appears in the immediate context of a template instantiation.
 
 </details>
 
@@ -48,11 +78,11 @@ Constructs and returns an object that stores a member value-initialized by `T(st
 <summary><h3 style="display:inline-block"><code>pr::get_context</code></h3></summary>
 
 ```cpp
-template <class T>
-[[nodiscard]] auto get_context() noexcept -> std::add_pointer_t<T>;
+template </*gettable*/ T>
+[[nodiscard]] auto get_context() noexcept -> T *;
 ```
 
-Returns the current address stored in `/*context*/<T>`.
+Returns `/*context*/<value_type>`, whose value has been initialized by thread-local calls to `pr::make_context<value_type>(...)` or `pr::make_context<value_type &>(...)`, or `nullptr` otherwise. `T` must be an optionally const-qualified non-reference type, or the instantiation is ill-formed, which can result in substitution failure when the call appears in the immediate context of a template instantiation.
 
 </details>
 
