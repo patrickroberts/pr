@@ -17,7 +17,7 @@ concept makeable_ =
     storable_<std::remove_reference_t<T>> and not std::is_rvalue_reference_v<T>;
 
 template <makeable_ T>
-class scoped_ {
+class provider_ {
   using value_type = std::remove_reference_t<T>;
 
   // `mutable` prevents UB when `make_context` initializes a `const auto`
@@ -27,15 +27,15 @@ class scoped_ {
 public:
   template <class... ArgsT>
     requires std::constructible_from<T, ArgsT...>
-  explicit scoped_(ArgsT &&...args) noexcept(
+  explicit provider_(ArgsT &&...args) noexcept(
       std::is_nothrow_constructible_v<T, ArgsT...>)
       : inner_(std::forward<ArgsT>(args)...),
         outer_(std::exchange(context_<value_type>, std::addressof(inner_))) {}
 
-  scoped_(const scoped_ &) = delete;
-  scoped_(scoped_ &&) = delete;
+  provider_(const provider_ &) = delete;
+  provider_(provider_ &&) = delete;
 
-  ~scoped_() noexcept { context_<value_type> = outer_; }
+  ~provider_() noexcept { context_<value_type> = outer_; }
 };
 
 template <class T>
@@ -62,8 +62,8 @@ concept gettable_ = storable_<std::remove_const_t<T>>;
 template <detail::makeable_ T, class... ArgsT>
   requires std::constructible_from<T, ArgsT...>
 [[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
-    std::is_nothrow_constructible_v<T, ArgsT...>) -> detail::scoped_<T> {
-  return detail::scoped_<T>(std::forward<ArgsT>(args)...);
+    std::is_nothrow_constructible_v<T, ArgsT...>) -> detail::provider_<T> {
+  return detail::provider_<T>(std::forward<ArgsT>(args)...);
 }
 
 /**

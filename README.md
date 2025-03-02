@@ -21,7 +21,7 @@ concept /*makeable*/ =
     /*storable*/<std::remove_reference_t<T>> and not std::is_rvalue_reference_v<T>;
 
 template <makeable_ T>
-class /*scoped*/ {
+class /*provider*/ {
   using value_type = std::remove_reference_t<T>;
 
   // `mutable` prevents UB when `make_context` initializes a `const auto`
@@ -31,19 +31,19 @@ class /*scoped*/ {
 public:
   template <class... ArgsT>
     requires std::constructible_from<T, ArgsT...>
-  explicit /*scoped*/(ArgsT &&...args) noexcept(
+  explicit /*provider*/(ArgsT &&...args) noexcept(
       std::is_nothrow_constructible_v<T, ArgsT...>);
 
-  /*scoped*/(const /*scoped*/ &) = delete;
-  /*scoped*/(/*scoped*/ &&) = delete;
+  /*provider*/(const /*provider*/ &) = delete;
+  /*provider*/(/*provider*/ &&) = delete;
 
-  ~/*scoped*/() noexcept;
+  ~/*provider*/() noexcept;
 };
 
 template </*makeable*/ T, class... ArgsT>
   requires std::constructible_from<T, ArgsT...>
 [[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
-    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*scoped*/<T>;
+    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*provider*/<T>;
 
 template <class T>
 concept /*gettable*/ = /*storable*/<std::remove_const_t<T>>;
@@ -65,10 +65,10 @@ template </*gettable*/ T>
 template </*makeable*/ T, class... ArgsT>
   requires std::constructible_from<T, ArgsT...>
 [[nodiscard]] auto make_context(ArgsT &&...args) noexcept(
-    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*scoped*/<T>;
+    std::is_nothrow_constructible_v<T, ArgsT...>) -> /*provider*/<T>;
 ```
 
-Constructs and returns `/*scoped*/<T>`, whose constructor initializes its members as if by `inner_(std::forward<ArgsT>(args)...), outer_(std::exchange(/*context*/<value_type>, std::addressof(inner_)))`. Its destructor restores `/*context*/<value_type>` to the value of `outer_`. `T` must be a cv-unqualified non-reference or lvalue-reference type, or the instantiation is ill-formed, which can result in substitution failure when the call appears in the immediate context of a template instantiation.
+Constructs and returns `/*provider*/<T>`, whose constructor initializes its members as if by `inner_(std::forward<ArgsT>(args)...), outer_(std::exchange(/*context*/<value_type>, std::addressof(inner_)))`. Its destructor restores `/*context*/<value_type>` to the value of `outer_`. `T` must be a cv-unqualified non-reference or lvalue-reference type, or the instantiation is ill-formed, which can result in substitution failure when the call appears in the immediate context of a template instantiation.
 
 </details>
 
