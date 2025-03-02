@@ -10,7 +10,7 @@ concept storable_ = std::same_as<T, std::remove_cvref_t<T>>;
 
 template <storable_ T>
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static thread_local constinit T *context_ = nullptr;
+inline thread_local constinit T *context_ = nullptr;
 
 template <class T>
 concept makeable_ =

@@ -14,7 +14,7 @@ template <class T>
 concept /*storable*/ = std::same_as<T, std::remove_cvref_t<T>>;
 
 template </*storable*/ T>
-static thread_local constinit T * /*context*/ = nullptr;
+inline thread_local constinit T * /*context*/ = nullptr;
 
 template <class T>
 concept /*makeable*/ =
