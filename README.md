@@ -14,7 +14,7 @@ template <class T>
 concept /*storable*/ = std::same_as<T, std::remove_cvref_t<T>>;
 
 template </*storable*/ T>
-static thread_local T * /*context*/ = nullptr;
+static thread_local constinit T * /*context*/ = nullptr;
 
 template <class T>
 concept /*makeable*/ =
@@ -24,7 +24,8 @@ template <makeable_ T>
 class /*scoped*/ {
   using value_type = std::remove_reference_t<T>;
 
-  [[no_unique_address]] T inner_; // exposition-only
+  // `mutable` prevents UB when `make_context` initializes a `const auto`
+  [[no_unique_address]] mutable T inner_; // exposition-only
   value_type *outer_; // exposition-only
 
 public:
@@ -34,7 +35,6 @@ public:
       std::is_nothrow_constructible_v<T, ArgsT...>);
 
   /*scoped*/(const /*scoped*/ &) = delete;
-
   /*scoped*/(/*scoped*/ &&) = delete;
 
   ~/*scoped*/() noexcept;

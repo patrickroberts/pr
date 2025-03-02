@@ -10,7 +10,7 @@ concept storable_ = std::same_as<T, std::remove_cvref_t<T>>;
 
 template <storable_ T>
 // NOLINTNEXTLINE(cppcoreguidelines-avoid-non-const-global-variables)
-static thread_local T *context_ = nullptr;
+static thread_local constinit T *context_ = nullptr;
 
 template <class T>
 concept makeable_ =
@@ -20,7 +20,8 @@ template <makeable_ T>
 class scoped_ {
   using value_type = std::remove_reference_t<T>;
 
-  [[no_unique_address]] T inner_;
+  // `mutable` prevents UB when `make_context` initializes a `const auto`
+  [[no_unique_address]] mutable T inner_;
   value_type *outer_;
 
 public:
@@ -32,7 +33,6 @@ public:
         outer_(std::exchange(context_<value_type>, std::addressof(inner_))) {}
 
   scoped_(const scoped_ &) = delete;
-
   scoped_(scoped_ &&) = delete;
 
   ~scoped_() noexcept { context_<value_type> = outer_; }
