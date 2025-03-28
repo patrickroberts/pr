@@ -165,7 +165,7 @@ The `pr::ranges::copyable_view` concept is a refinement of `std::ranges::view` f
 ```cpp
 template <std::ranges::viewable_range RangeT>
     requires /* see below */
-constexpr auto shared(RangeT &&range) -> std::ranges::view auto;
+constexpr auto shared(RangeT &&range) -> copyable_view auto;
 ```
 
 Given an expression `e` of type `T`, the expression `pr::views::shared(e)` is expression-equivalent to:
