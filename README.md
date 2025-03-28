@@ -293,10 +293,10 @@ struct /*destroys*/ : trait_base {
   static constexpr bool enable = true;
 
   template <declares</*destroys*/> T>
-  static constexpr void fn(Storage &storage) noexcept;
+  static constexpr void fn(Storage &storage);
 
   template <implements</*destroys*/> T>
-  static constexpr void fn(Storage &storage) noexcept;
+  static constexpr void fn(Storage &storage);
 };
 
 template <trait... Traits>
