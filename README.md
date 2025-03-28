@@ -274,9 +274,30 @@ template <class T, class Trait>
 concept implements = not /*is-impl*/<T> and
                      trait<Trait> and Trait::template enable<T>;
 
+template <class T, class U>
+concept /*different-from*/ =
+    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
+
 template <class T, class Abstract, class Interface>
 concept concrete =
     /*different-from*/<T, Abstract> and implements<T, Interface>;
+
+template <class Fn, class R, class... Args>
+concept /*invocable-r*/ =
+    std::invocable<Fn, Args...> and
+    std::convertible_to<std::invoke_result_t<Fn, Args...>, R>;
+
+template <class Storage>
+struct /*destroys*/ : trait_base {
+  template <std::destructible T>
+  static constexpr bool enable = true;
+
+  template <declares</*destroys*/> T>
+  static constexpr void fn(Storage &storage) noexcept;
+
+  template <implements</*destroys*/> T>
+  static constexpr void fn(Storage &storage) noexcept;
+};
 
 template <trait... Traits>
 struct interface : trait_base {
@@ -303,8 +324,13 @@ using default_table = pointer_table;
 
 template <trait Interface, class Storage = default_storage,
           class Table = default_table>
-class impl {
-  using interface_type = /* see below */; // exposition-only
+class impl;
+
+template <class... Traits, class Storage, class Table>
+class impl<interface<Traits...>, Storage, Table> {
+  using interface_type =
+      interface<Traits..., /*destroys*/<Storage>>; // exposition-only
+
   /* unspecified */ table; // exposition-only
   Storage storage; // exposition-only
 
@@ -322,9 +348,9 @@ public:
   impl(const impl &) = delete;
   impl(impl &&) = delete;
 
-  template <trait Trait, class... Args>
+  template <class Trait>
     requires /* see below */
-  constexpr decltype(auto) operator()(Trait trait, Args &&...args) const;
+  constexpr auto operator[](Trait trait) const;
 
   constexpr ~impl();
 };
@@ -355,7 +381,7 @@ struct copy_constructs : pr::trait_base {
 
 struct speaks : pr::trait_base {
   template <class T>
-  static constexpr bool enable = requires (const T &object) {
+  static constexpr bool enable = requires(const T &object) {
     { object.speak() } -> std::convertible_to<std::string>;
   };
 
@@ -378,11 +404,9 @@ public:
   constexpr animal(T &&object) : impl(std::forward<T>(object)) {}
 
   constexpr animal(const animal &other)
-      : impl(other.impl(copy_constructs{}, other.impl)) {}
+      : impl(other.impl[copy_constructs{}](other.impl)) {}
 
-  constexpr auto speak() const -> std::string {
-    return impl(speaks{}, impl);
-  }
+  constexpr auto speak() const -> std::string { return impl[speaks{}](impl); }
 };
 
 struct cow {
