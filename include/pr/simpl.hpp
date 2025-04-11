@@ -1,471 +1,485 @@
 #pragma once
 
 #include <array>
-#include <concepts>
 #include <functional>
-#include <memory>
-#include <tuple>
 #include <type_traits>
-#include <variant>
+#include <utility>
 
 namespace pr {
-namespace detail {
 
-template <class T>
-inline constexpr bool is_impl_ = false;
+template <typename T, template <typename...> typename L>
+inline constexpr bool _is_type_specialization_of_v = false;
 
-template <class T, class U>
-concept different_from_ =
-    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
+template <typename... Ts, template <typename...> typename L>
+inline constexpr bool _is_type_specialization_of_v<L<Ts...>, L> = true;
 
-template <class Fn, class R, class... Args>
-concept invocable_r = std::invocable<Fn, Args...> and
-                      std::convertible_to<std::invoke_result_t<Fn, Args...>, R>;
+template <typename T, template <auto...> typename L>
+inline constexpr bool _is_value_specialization_of_v = false;
 
-// provides sizeof and alignof for references
-template <class T>
-struct raw_ {
-  T value;
-};
+template <auto... Vs, template <auto...> typename L>
+inline constexpr bool _is_value_specialization_of_v<L<Vs...>, L> = true;
 
-template <class T, std::size_t Size, std::size_t Align>
-concept small_ = sizeof(raw_<T>) <= Size and alignof(raw_<T>) <= Align;
+template <typename T, template <typename...> typename L>
+concept _type_specialization_of = pr::_is_type_specialization_of_v<T, L>;
 
-template <class T>
-struct get_fn_;
-
-template <class T>
-inline constexpr get_fn_<T> get_{};
-
-template <class T>
-  requires std::is_object_v<T>
-struct get_fn_<T> {
-  template <class Storage>
-  static constexpr auto operator()(Storage &storage) noexcept -> T & {
-    return static_cast<raw_<T> *>(storage.get())->value;
-  }
-
-  template <class Storage>
-  static constexpr auto
-  operator()(const Storage &storage) noexcept -> const T & {
-    return static_cast<const raw_<T> *>(storage.get())->value;
-  }
-
-  template <class Storage>
-  static constexpr auto operator()(Storage &&storage) noexcept -> T && {
-    return std::move(*static_cast<raw_<T> *>(storage.get())).value;
-  }
-
-  template <class Storage>
-  static constexpr auto
-  operator()(const Storage &&storage) noexcept -> const T && {
-    return std::move(*static_cast<const raw_<T> *>(storage.get())).value;
-  }
-};
-
-template <class T>
-  requires std::is_reference_v<T>
-struct get_fn_<T> {
-  template <class Storage>
-  static constexpr auto operator()(const Storage &storage) noexcept -> T {
-    return static_cast<T>(static_cast<const raw_<T> *>(storage.get())->value);
-  }
-};
-
-template <class T, class... Args>
-  requires std::constructible_from<T, Args &&...>
-class constructor_ {
-  std::tuple<Args &&...> args;
-
-  static constexpr auto make(Args &&...args) -> T {
-    return T(std::forward<Args>(args)...);
-  }
-
-public:
-  constexpr constructor_(std::in_place_type_t<T> type, Args &&...args) noexcept
-      : args(std::forward<Args>(args)...) {}
-
-  constexpr auto operator()() const && -> T {
-    return std::apply(make, std::move(args));
-  }
-};
-
-} // namespace detail
+template <typename T, template <auto...> typename L>
+concept _value_specialization_of = pr::_is_value_specialization_of_v<T, L>;
 
 struct trait_base {};
 
-template <class T>
-inline constexpr bool enable_trait = std::derived_from<T, trait_base>;
+template <typename T>
+concept trait = std::is_aggregate_v<T> and std::is_empty_v<T> and
+                std::is_base_of_v<pr::trait_base, T>;
 
-template <class T>
-concept trait =
-    std::is_aggregate_v<T> and std::is_empty_v<T> and enable_trait<T>;
+template <pr::trait... Traits>
+struct interface;
 
-template <class T, class Trait>
-concept declares = detail::is_impl_<std::remove_cvref_t<T>> and trait<Trait>;
+template <typename T>
+concept _interface = pr::_type_specialization_of<T, pr::interface>;
 
-template <class T, class Trait>
-concept implements = not detail::is_impl_<std::remove_cvref_t<T>> and
-                     trait<Trait> and Trait::template enable<T>;
+struct _table_base {};
 
-template <class T, class Abstract, class Interface>
-concept concrete =
-    detail::different_from_<T, Abstract> and implements<T, Interface>;
+template <typename T>
+concept _table = std::is_base_of_v<pr::_table_base, T>;
 
-template <trait... Traits>
-struct interface : trait_base {
-  template <class T>
-    requires(... and implements<T, Traits>)
-  static constexpr bool enable = true;
+struct inplace_table;
+
+struct pointer_table;
+
+template <typename T>
+inline constexpr bool _enable_storage = false;
+
+template <typename T>
+concept _storage = pr::_enable_storage<T>;
+
+template <typename T>
+struct _wrapper {
+  T m_value;
 };
 
-namespace detail {
+template <typename T, typename Storage>
+concept _small = pr::_storage<Storage> and
+                 sizeof(pr::_wrapper<T>) <= Storage::size_bytes() and
+                 Storage::align_bytes() % alignof(pr::_wrapper<T>) == 0;
 
-template <trait Trait, class T>
-using fn_ = decltype(Trait::template fn<T>);
+template <typename F, typename R, typename... Args>
+concept _invocable_r = std::is_invocable_r_v<R, F, Args...>;
 
-template <trait Trait, class Impl>
-struct table_ {
-  fn_<Trait, Impl> *method;
+template <typename T>
+concept _reference = std::is_reference_v<T>;
+
+template <typename T>
+concept _non_reference = not pr::_reference<T>;
+
+enum class _storage_index : bool {
+  _is_inplace,
+  _is_pointer,
 };
 
-template <class... Traits, class Impl>
-struct table_<interface<Traits...>, Impl> : table_<Traits, Impl>... {};
+using enum pr::_storage_index;
 
-template <class T, class Param, class Arg>
-constexpr auto unwrap_(Arg &&arg) -> decltype(auto) {
-  if constexpr (std::same_as<Param &&, Arg &&>) {
-    return std::forward<Arg>(arg);
-  } else {
-    static_assert(is_impl_<std::remove_cvref_t<Arg>>);
-    return static_cast<Param>(get_<T>(std::forward<Arg>(arg).storage));
-  }
-}
-
-template <class T, class R, class... Params, class... Args>
-constexpr auto invoke_unwrap_(R (*fn)(Params...), Args &&...args) -> R {
-  return std::invoke(fn,
-                     detail::unwrap_<T, Params>(std::forward<Args>(args))...);
-}
-
-template <trait Trait, class Impl, implements<Trait> T,
-          class = fn_<Trait, Impl>>
-struct method_;
-
-template <trait Trait, class Impl, implements<Trait> T, class R, class... Args,
-          bool Noexcept>
-struct method_<Trait, Impl, T, R(Args...) noexcept(Noexcept)> {
-  static constexpr auto fn(Args... args) noexcept(Noexcept) -> R {
-    return detail::invoke_unwrap_<T>(Trait::template fn<T>,
-                                     std::forward<Args>(args)...);
-  }
-};
-
-template <trait Trait, class Impl, class T>
-inline constexpr table_<Trait, Impl> methods{method_<Trait, Impl, T>::fn};
-
-// optimization to bypass invoke_unwrap<T> if signatures are compatible
-template <trait Trait, class Impl, class T>
-  requires std::convertible_to<fn_<Trait, T>, fn_<Trait, Impl>>
-inline constexpr table_<Trait, Impl> methods<Trait, Impl, T>{
-    Trait::template fn<T>};
-
-template <class... Traits, class Impl, class T>
-inline constexpr table_<interface<Traits...>, Impl>
-    methods<interface<Traits...>, Impl, T>{methods<Traits, Impl, T>...};
-
-template <class Storage>
-struct destroys_ : trait_base {
-  template <std::destructible T>
-  static constexpr bool enable = true;
-
-  template <declares<destroys_> T>
-  static constexpr void fn(Storage &storage);
-
-  template <implements<destroys_> T>
-  static constexpr void fn(Storage &storage) {
-    storage.template reset<T>();
-  }
-};
-
-struct get_visitor_ {
-  static constexpr auto operator()(auto &alternative) {
-    return alternative.get();
-  }
-};
-
-template <class T>
-struct reset_visitor_ {
-  static constexpr auto operator()(auto &alternative) {
-    alternative.template reset<T>();
-  }
-};
-
-inline constexpr get_visitor_ getter_{};
-
-template <class T>
-inline constexpr reset_visitor_<T> resetter_{};
-
-template <class Trait, class Interface, class Impl>
-concept trait_of_ =
-    trait<Trait> and std::derived_from<detail::table_<Interface, Impl>,
-                                       detail::table_<Trait, Impl>>;
-
-} // namespace detail
-
-// allows inplace storage if sizeof <= Size and alignof <= Align, otherwise
-// allocates storage with operator new
 template <std::size_t Size, std::size_t Align = alignof(void *)>
-class small_storage;
+struct inplace_storage {
+  using buffer_type = std::array<std::byte, Size>;
 
-// only allows inplace storage if sizeof <= Size and alignof <= Align
-template <std::size_t Size, std::size_t Align = alignof(void *)>
-class inplace_storage {
-  template <class T>
-  friend struct detail::get_fn_;
+  static consteval auto size_bytes() noexcept -> std::size_t { return Size; }
+  static consteval auto align_bytes() noexcept -> std::size_t { return Align; }
 
-  friend struct detail::get_visitor_;
+  alignas(Align) buffer_type m_buffer;
 
-  template <class T>
-  friend struct detail::reset_visitor_;
+  template <pr::_small<inplace_storage> T, pr::_invocable_r<T> F>
+  inplace_storage(std::in_place_type_t<T> _, F &&f) {
+    using inplace_type =
+        std::conditional_t<pr::_reference<T>, pr::_wrapper<T>, T>;
 
-  friend struct detail::destroys_<inplace_storage>;
-
-  friend class pr::small_storage<Size, Align>;
-
-  template <trait Interface, class Storage, class Table>
-  friend class impl;
-
-  struct storage_type {
-    alignas(Align) std::array<std::byte, Size> data;
-  };
-
-  storage_type storage;
-
-  [[nodiscard]] constexpr auto get() noexcept -> void * {
-    return std::addressof(storage);
+    ::new (static_cast<void *>(&m_buffer))
+        inplace_type(std::invoke(std::forward<F>(f)));
   }
 
-  [[nodiscard]] constexpr auto get() const noexcept -> const void * {
-    return std::addressof(storage);
+  template <pr::_small<inplace_storage> T, pr::_invocable_r<T> F>
+  static auto make_storage(std::in_place_type_t<T> type,
+                           F &&f) -> inplace_storage {
+    return {type, std::forward<F>(f)};
   }
-
-  template <class T>
-  constexpr void reset() {
-    using raw_type = detail::raw_<T>;
-    static_cast<raw_type *>(get())->~raw_type();
-  }
-
-public:
-  template <detail::small_<Size, Align> T, detail::invocable_r<T> Fn>
-  inplace_storage(std::in_place_type_t<T> type,
-                  Fn &&fn) noexcept(std::is_nothrow_invocable_r_v<T, Fn>) {
-    ::new (get()) detail::raw_<T>{std::invoke(std::forward<Fn>(fn))};
-  }
-
-  template <detail::small_<Size, Align> T, class... Args>
-    requires std::constructible_from<T, Args &&...>
-  inplace_storage(std::in_place_type_t<T> type, Args &&...args) noexcept(
-      std::is_nothrow_constructible_v<T, Args &&...>)
-      : inplace_storage(
-            type, detail::constructor_{type, std::forward<Args>(args)...}) {}
 };
 
-// always allocates storage with operator new
-class pointer_storage {
-  template <class T>
-  friend struct detail::get_fn_;
+template <pr::_value_specialization_of<pr::inplace_storage> T>
+inline constexpr bool _enable_storage<T> = true;
 
-  friend struct detail::get_visitor_;
-
-  template <class T>
-  friend struct detail::reset_visitor_;
-
-  friend struct detail::destroys_<pointer_storage>;
-
-  template <std::size_t Size, std::size_t Align>
-  friend class small_storage;
-
-  template <trait Interface, class Storage, class Table>
-  friend class impl;
-
+struct pointer_storage {
   using pointer_type = void *;
 
-  pointer_type storage;
+  pointer_type m_pointer;
 
-  [[nodiscard]] constexpr auto get() noexcept -> void * { return storage; }
-
-  [[nodiscard]] constexpr auto get() const noexcept -> const void * {
-    return storage;
+  template <pr::_reference T, pr::_invocable_r<T> F>
+  static constexpr auto make_storage(std::in_place_type_t<T> _,
+                                     F &&f) -> pointer_storage {
+    using type = std::remove_cvref_t<T>;
+    const T reference = std::invoke(std::forward<F>(f));
+    return {.m_pointer{const_cast<type *>(std::addressof(reference))}};
   }
 
-  template <class T>
-  constexpr void reset() {
-    using raw_type = detail::raw_<T>;
-    delete static_cast<raw_type *>(get());
+  template <pr::_non_reference T, pr::_invocable_r<T> F>
+  static constexpr auto make_storage(std::in_place_type_t<T> _,
+                                     F &&f) -> pointer_storage {
+    using type = std::remove_cv_t<T>;
+    T *const pointer = new T(std::invoke(std::forward<F>(f)));
+    return {.m_pointer{const_cast<type *>(pointer)}};
   }
-
-public:
-  constexpr pointer_storage() noexcept = default;
-
-  template <class T, detail::invocable_r<T> Fn>
-  constexpr pointer_storage(std::in_place_type_t<T> type, Fn &&fn)
-      : storage(new detail::raw_<T>{std::invoke(std::forward<Fn>(fn))}) {}
-
-  template <class T, class... Args>
-    requires std::constructible_from<T, Args &&...>
-  constexpr pointer_storage(std::in_place_type_t<T> type, Args &&...args)
-      : pointer_storage(
-            type, detail::constructor_{type, std::forward<Args>(args)...}) {}
 };
 
-template <std::size_t Size, std::size_t Align>
-class small_storage {
-  template <class T>
-  friend struct detail::get_fn_;
+template <std::same_as<pointer_storage> T>
+inline constexpr bool _enable_storage<T> = true;
 
-  friend struct detail::destroys_<small_storage>;
+template <std::size_t Size, std::size_t Align = alignof(void *)>
+struct small_storage {
+  using inplace_type = pr::inplace_storage<Size, Align>;
+  using pointer_type = pr::pointer_storage;
 
-  template <trait Interface, class Storage, class Table>
-  friend class impl;
+  union {
+    inplace_type m_inplace;
+    pointer_type m_pointer;
+  };
 
-  using inplace_type = inplace_storage<Size, Align>;
-  using pointer_type = pointer_storage;
+  static consteval auto size_bytes() noexcept -> std::size_t { return Size; }
+  static consteval auto align_bytes() noexcept -> std::size_t { return Align; }
 
-  std::variant<pointer_type, inplace_type> storage;
-
-  [[nodiscard]] constexpr auto get() noexcept -> void * {
-    return std::visit(detail::getter_, storage);
-  }
-
-  [[nodiscard]] constexpr auto get() const noexcept -> const void * {
-    return std::visit(detail::getter_, storage);
-  }
-
-  template <class T>
-  constexpr void reset() {
-    std::visit(detail::resetter_<T>, storage);
-  }
-
-public:
-  template <class T, detail::invocable_r<T> Fn>
-  constexpr small_storage(std::in_place_type_t<T> type, Fn &&fn) noexcept(
-      detail::small_<T, Size, Align> and std::is_nothrow_invocable_r_v<T, Fn>) {
-    if constexpr (detail::small_<T, Size, Align>) {
+  template <typename T, pr::_invocable_r<T> F>
+  static constexpr auto make_storage(std::in_place_type_t<T> type,
+                                     F &&f) -> small_storage {
+    if constexpr (pr::_small<T, small_storage> and pr::_non_reference<T>) {
       if (not std::is_constant_evaluated()) {
-        std::construct_at(std::addressof(storage),
-                          std::in_place_type<inplace_type>, std::move(type),
-                          std::forward<Fn>(fn));
-        return;
+        return {
+            .m_inplace{inplace_type::make_storage(type, std::forward<F>(f))}};
       }
     }
 
-    std::construct_at(std::addressof(storage), std::in_place_type<pointer_type>,
-                      std::move(type), std::forward<Fn>(fn));
-  }
-
-  template <class T, class... Args>
-    requires std::constructible_from<T, Args &&...>
-  constexpr small_storage(
-      std::in_place_type_t<T> type,
-      Args &&...args) noexcept(detail::small_<T, Size, Align> and
-                               std::is_nothrow_constructible_v<T, Args &&...>)
-      : small_storage(type,
-                      detail::constructor_{type, std::forward<Args>(args)...}) {
+    return {.m_pointer{pointer_type::make_storage(type, std::forward<F>(f))}};
   }
 };
 
-using default_storage = small_storage<sizeof(void *)>;
+template <pr::_value_specialization_of<small_storage> T>
+inline constexpr bool _enable_storage<T> = true;
 
-// stores vtable as part of class layout
-struct inplace_table {
-  template <trait Interface, class Impl>
-  struct type {
-    template <detail::trait_of_<Interface, Impl> Trait>
-    using method_type = detail::table_<Trait, Impl>;
+template <typename T>
+concept _inplace_storage =
+    _storage<T> and pr::_value_specialization_of<T, inplace_storage>;
 
-    method_type<Interface> methods;
+template <typename T>
+concept _pointer_storage = _storage<T> and std::same_as<T, pointer_storage>;
 
-    template <implements<Interface> T>
-    static consteval auto make() -> type {
-      return {detail::methods<Interface, Impl, T>};
-    }
+template <typename T>
+concept _small_storage =
+    _storage<T> and pr::_value_specialization_of<T, small_storage>;
 
-    template <detail::trait_of_<Interface, Impl> Trait, class... Args>
-    constexpr auto operator()(Trait trait, Args &&...args) const
-        -> detail::fn_<Trait, Impl> * {
-      return static_cast<const method_type<Trait> &>(methods).method;
-    }
-  };
-};
-
-// stores pointer to vtable
-struct pointer_table {
-  template <trait Interface, class Impl>
-  struct type {
-    template <trait Trait>
-    using method_type = detail::table_<Trait, Impl>;
-
-    const method_type<Interface> *methods;
-
-    template <implements<Interface> T>
-    static consteval auto make() -> type {
-      return {std::addressof(detail::methods<Interface, Impl, T>)};
-    }
-
-    template <detail::trait_of_<Interface, Impl> Trait>
-    constexpr auto operator[](Trait trait) const -> detail::fn_<Trait, Impl> * {
-      return static_cast<const method_type<Trait> &>(*methods).method;
-    }
-  };
-};
-
-using default_table = pointer_table;
-
-template <trait Interface, class Storage = default_storage,
-          class Table = default_table>
+template <pr::_interface Interface,
+          pr::_storage Storage = pr::small_storage<sizeof(void *)>,
+          pr::_table Table = pr::pointer_table>
 class impl;
 
-template <class... Traits, class Storage, class Table>
-class impl<interface<Traits...>, Storage, Table> {
-  template <class T, class Param, class Arg>
-  friend constexpr auto detail::unwrap_(Arg &&arg) -> decltype(auto);
+template <typename T>
+concept _impl = pr::_type_specialization_of<T, pr::impl>;
 
-  using storage_type = Storage;
-  using destroys = detail::destroys_<storage_type>;
-  using interface_type = interface<Traits..., destroys>;
-  using table_type = Table::template type<interface_type, impl>;
+template <typename T, typename Trait>
+concept declares = pr::_impl<T> and pr::trait<Trait>;
 
-  table_type table;
-  storage_type storage;
+template <typename T, typename Trait>
+concept implements = not pr::_impl<std::remove_cvref_t<T>> and
+                     pr::trait<Trait> and Trait::template enable<T>;
+
+template <pr::trait... Traits>
+struct interface : pr::trait_base {
+  template <typename T>
+  static constexpr bool enable = (... and pr::implements<T, Traits>);
+};
+
+template <typename T, typename U>
+concept _different_from =
+    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
+
+template <typename T, typename Wrapper, typename Interface>
+concept concrete = _different_from<T, Wrapper> and _interface<Interface> and
+                   implements<T, Interface>;
+
+struct _destroys : pr::trait_base {
+  template <std::destructible T>
+  static constexpr bool enable = true;
+
+  template <pr::declares<_destroys> Impl>
+  static constexpr void fn(Impl &object) noexcept;
+
+  template <pr::implements<_destroys> T, pr::_storage_index Index>
+  static constexpr void fn(T &object) noexcept {
+    if constexpr (pr::_non_reference<T>) {
+      if constexpr (Index == pr::_is_inplace) {
+        object.~T();
+      } else {
+        delete std::addressof(object);
+      }
+    }
+  }
+};
+
+template <typename T, typename Storage>
+concept _storable = requires(std::in_place_type_t<T> type, T f()) {
+  { Storage::make_storage(type, f) } -> std::same_as<Storage>;
+};
+
+template <pr::trait Trait, typename T>
+using _function_t = decltype(Trait::template fn<T>);
+
+template <pr::trait Trait, pr::_impl Impl>
+struct _vtable {
+  pr::_function_t<Trait, Impl> *m_function;
+};
+
+template <typename... Traits, pr::_impl Impl>
+struct _vtable<pr::interface<Traits...>, Impl>
+    : pr::_vtable<Traits, Impl>..., pr::_vtable<pr::_destroys, Impl> {};
+
+template <typename Trait, typename Impl>
+concept _trait_of =
+    pr::trait<Trait> and pr::_impl<Impl> and
+    std::is_base_of_v<pr::_vtable<Trait, Impl>,
+                      pr::_vtable<typename Impl::interface_type, Impl>>;
+
+template <pr::_interface Interface, pr::_storage Storage, pr::_table Table>
+class impl {
+  template <typename T, pr::_storage_index Index, typename Param, typename Arg>
+  friend constexpr auto
+  _forward_or_unwrap(Arg &&arg) noexcept -> decltype(auto);
 
 public:
-  template <implements<interface_type> T, detail::invocable_r<T> Fn>
-  constexpr impl(std::in_place_type_t<T> type, Fn &&fn)
-      : table(table_type::template make<T>()),
-        storage(std::move(type), std::forward<Fn>(fn)) {}
+  using interface_type = Interface;
+  using storage_type = Storage;
+  using table_type = Table::template type<impl>;
 
-  template <implements<interface_type> T, class... Args>
-    requires std::constructible_from<T, Args &&...>
-  constexpr impl(std::in_place_type_t<T> type, Args &&...args)
-      : impl(type, detail::constructor_{type, std::forward<Args>(args)...}) {}
+private:
+  table_type m_table;
+  storage_type m_storage;
 
-  template <implements<interface_type> T>
-  constexpr impl(T &&object)
-      : impl(std::in_place_type<T>, std::forward<T>(object)) {}
+public:
+  // participates when storage_type is a specialization of inplace_storage
+  template <pr::implements<interface_type> T, pr::_invocable_r<T> F>
+    requires pr::_inplace_storage<storage_type> and pr::_small<T, storage_type>
+  impl(std::in_place_type_t<T> type,
+       F &&f) noexcept(std::is_nothrow_invocable_r_v<T, F>)
+      : m_table{table_type::template make_table<pr::_is_inplace>(type)},
+        m_storage{storage_type::make_storage(type, std::forward<F>(f))} {}
+
+  // participates when storage_type supports pointer_storage
+  template <pr::implements<interface_type> T, pr::_invocable_r<T> F>
+    requires pr::_pointer_storage<storage_type> or
+                 pr::_small_storage<storage_type>
+  constexpr impl(std::in_place_type_t<T> type, F &&f)
+      : m_table{table_type::template make_table<pr::_is_pointer>(type)},
+        m_storage{storage_type::make_storage(type, std::forward<F>(f))} {}
+
+  // participates when storage_type is a specialization of small_storage
+  template <pr::implements<interface_type> T, pr::_invocable_r<T> F>
+    requires pr::_small_storage<storage_type> and
+                 pr::_small<T, storage_type> and pr::_non_reference<T>
+  constexpr impl(std::in_place_type_t<T> type, F &&f)
+      : m_table{std::is_constant_evaluated()
+                    ? table_type::template make_table<pr::_is_pointer>(type)
+                    : table_type::template make_table<pr::_is_inplace>(type)},
+        m_storage{storage_type::make_storage(type, std::forward<F>(f))} {}
+
+  template <pr::implements<interface_type> T, typename... Args>
+    requires pr::_storable<T, storage_type> and
+             std::constructible_from<T, Args &&...>
+  constexpr impl(std::in_place_type_t<T> type, Args &&...args) noexcept(
+      std::is_nothrow_constructible_v<T, Args &&...> and
+      pr::_inplace_storage<storage_type>)
+      : impl{type,
+             [&]() noexcept(std::is_nothrow_constructible_v<T, Args &&...>)
+                 -> T { return T(std::forward<Args>(args)...); }} {}
+
+  template <pr::implements<interface_type> T>
+    requires pr::_storable<T, storage_type> and std::constructible_from<T, T &&>
+  constexpr impl(T &&object) noexcept(
+      std::is_nothrow_constructible_v<T, T &&> and
+      pr::_inplace_storage<storage_type>)
+      : impl{std::in_place_type<T>, std::forward<T>(object)} {}
 
   impl(const impl &) = delete;
   impl(impl &&) = delete;
 
-  template <detail::trait_of_<interface_type, impl> Trait>
-  constexpr auto operator[](Trait trait) const {
-    return table[std::move(trait)];
+  auto operator=(const impl &) -> impl & = delete;
+  auto operator=(impl &&) -> impl & = delete;
+
+  constexpr auto operator[](pr::_trait_of<impl> auto trait) const noexcept {
+    return m_table[trait];
   }
 
-  constexpr ~impl() { table[destroys{}](storage); }
+  constexpr ~impl() noexcept(pr::_inplace_storage<storage_type>) {
+    m_table[pr::_destroys{}](*this);
+  }
 };
 
-template <class Interface, class Storage, class Table>
-inline constexpr bool detail::is_impl_<impl<Interface, Storage, Table>> = true;
+template <pr::_storage_index Index, std::size_t Size, std::size_t Align>
+constexpr auto
+_get_pointer(pr::inplace_storage<Size, Align> &storage) noexcept {
+  static_assert(Index == pr::_is_inplace);
+  return static_cast<void *>(&storage.m_buffer);
+}
+
+template <pr::_storage_index Index, std::size_t Size, std::size_t Align>
+constexpr auto
+_get_pointer(const pr::inplace_storage<Size, Align> &storage) noexcept {
+  static_assert(Index == pr::_is_inplace);
+  return static_cast<const void *>(&storage.m_buffer);
+}
+
+template <pr::_storage_index Index>
+constexpr auto _get_pointer(const pr::pointer_storage &storage) noexcept {
+  static_assert(Index == pr::_is_pointer);
+  return storage.m_pointer;
+}
+
+template <pr::_storage_index Index, std::size_t Size, std::size_t Align>
+constexpr auto _get_pointer(pr::small_storage<Size, Align> &storage) noexcept {
+  if constexpr (Index == pr::_is_inplace) {
+    return pr::_get_pointer<Index>(storage.m_inplace);
+  } else {
+    return pr::_get_pointer<Index>(storage.m_pointer);
+  }
+}
+
+template <pr::_storage_index Index, std::size_t Size, std::size_t Align>
+constexpr auto
+_get_pointer(const pr::small_storage<Size, Align> &storage) noexcept {
+  if constexpr (Index == pr::_is_inplace) {
+    return pr::_get_pointer<Index>(storage.m_inplace);
+  } else {
+    return pr::_get_pointer<Index>(storage.m_pointer);
+  }
+}
+
+template <pr::_non_reference T, pr::_storage_index Index>
+constexpr auto _unwrap(pr::_storage auto &storage) noexcept -> T & {
+  return *static_cast<T *>(pr::_get_pointer<Index>(storage));
+}
+
+template <pr::_non_reference T, pr::_storage_index Index>
+constexpr auto _unwrap(const pr::_storage auto &storage) noexcept -> const T & {
+  return *static_cast<const T *>(pr::_get_pointer<Index>(storage));
+}
+
+template <pr::_non_reference T, pr::_storage_index Index>
+constexpr auto _unwrap(pr::_storage auto &&storage) noexcept -> T && {
+  return std::move(*static_cast<T *>(pr::_get_pointer<Index>(storage)));
+}
+
+template <pr::_non_reference T, pr::_storage_index Index>
+constexpr auto
+_unwrap(const pr::_storage auto &&storage) noexcept -> const T && {
+  return std::move(*static_cast<const T *>(pr::_get_pointer<Index>(storage)));
+}
+
+template <pr::_reference T, pr::_storage_index Index>
+constexpr auto _unwrap(const pr::_storage auto &storage) noexcept -> T {
+  if constexpr (Index == pr::_is_inplace) {
+    return static_cast<T>(
+        static_cast<const pr::_wrapper<T> *>(pr::_get_pointer<Index>(storage))
+            ->m_value);
+  } else {
+    return static_cast<T>(
+        *static_cast<std::add_pointer_t<T>>(pr::_get_pointer<Index>(storage)));
+  }
+}
+
+template <typename T, pr::_storage_index Index, typename Param, typename Arg>
+constexpr auto _forward_or_unwrap(Arg &&arg) noexcept -> decltype(auto) {
+  if constexpr (std::is_same_v<Param &&, Arg &&>) {
+    return std::forward<Arg>(arg);
+  } else {
+    static_assert(pr::_impl<std::remove_cvref_t<Arg>>);
+    return static_cast<Param>(
+        pr::_unwrap<T, Index>(std::forward<Arg>(arg).m_storage));
+  }
+}
+
+template <typename T, pr::_storage_index Index, typename R, typename... Params,
+          bool Noexcept, typename... Args>
+constexpr auto _invoke(R (*fn)(Params...) noexcept(Noexcept),
+                       Args &&...args) noexcept(Noexcept) -> R {
+  return fn(
+      pr::_forward_or_unwrap<T, Index, Params>(std::forward<Args>(args))...);
+}
+
+template <pr::trait Trait, pr::_impl Impl, pr::implements<Trait> T,
+          pr::_storage_index Index, typename = pr::_function_t<Trait, Impl>>
+struct _bind;
+
+template <pr::trait Trait, pr::_impl Impl, pr::implements<Trait> T,
+          pr::_storage_index Index, typename R, typename... Args, bool Noexcept>
+struct _bind<Trait, Impl, T, Index, R(Args...) noexcept(Noexcept)> {
+  static constexpr auto fn(Args &&...args) noexcept(Noexcept) -> R {
+    if constexpr (std::is_same_v<Trait, pr::_destroys>) {
+      return pr::_invoke<T, Index>(pr::_destroys::fn<T, Index>,
+                                   std::forward<Args>(args)...);
+    } else {
+      return pr::_invoke<T, Index>(Trait::template fn<T>,
+                                   std::forward<Args>(args)...);
+    }
+  }
+};
+
+template <pr::trait Trait, pr::_impl Impl, pr::implements<Trait> T,
+          pr::_storage_index Index>
+inline constexpr pr::_vtable<Trait, Impl> _vtable_v{
+    .m_function{pr::_bind<Trait, Impl, T, Index>::fn}};
+
+template <typename... Traits, pr::_impl Impl, typename T,
+          pr::_storage_index Index>
+inline constexpr pr::_vtable<pr::interface<Traits...>, Impl>
+    _vtable_v<pr::interface<Traits...>, Impl, T, Index>{
+        pr::_vtable_v<Traits, Impl, T, Index>...,
+        pr::_vtable_v<pr::_destroys, Impl, T, Index>};
+
+struct inplace_table : pr::_table_base {
+  template <pr::_impl Impl>
+  struct type {
+    using interface_type = typename Impl::interface_type;
+    using vtable_type = pr::_vtable<interface_type, Impl>;
+
+    vtable_type m_vtable;
+
+    template <pr::_storage_index Index, pr::implements<interface_type> T>
+    static consteval auto make_table(std::in_place_type_t<T> _) -> type {
+      return {.m_vtable{pr::_vtable_v<interface_type, Impl, T, Index>}};
+    }
+
+    template <pr::_trait_of<Impl> Trait>
+    constexpr auto
+    operator[](Trait _) const noexcept -> pr::_function_t<Trait, Impl> * {
+      return static_cast<const pr::_vtable<Trait, Impl> &>(m_vtable).m_function;
+    }
+  };
+};
+
+struct pointer_table : pr::_table_base {
+  template <pr::_impl Impl>
+  struct type {
+    using interface_type = typename Impl::interface_type;
+    using vtable_type = pr::_vtable<interface_type, Impl>;
+
+    const vtable_type *m_vtable;
+
+    template <pr::_storage_index Index, pr::implements<interface_type> T>
+    static consteval auto make_table(std::in_place_type_t<T> _) -> type {
+      return {.m_vtable{
+          std::addressof(pr::_vtable_v<interface_type, Impl, T, Index>)}};
+    }
+
+    template <pr::_trait_of<Impl> Trait>
+    constexpr auto
+    operator[](Trait _) const noexcept -> pr::_function_t<Trait, Impl> * {
+      return static_cast<const pr::_vtable<Trait, Impl> *>(m_vtable)
+          ->m_function;
+    }
+  };
+};
 
 } // namespace pr
