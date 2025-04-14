@@ -102,7 +102,7 @@ struct inplace_storage {
 
   template <pr::_inplace_storable_to<inplace_storage> T, pr::_invocable_r<T> F>
   // NOLINTNEXTLINE(cppcoreguidelines-pro-type-member-init)
-  inplace_storage(std::in_place_type_t<T> tag, F &&func) {
+  inplace_storage([[maybe_unused]] std::in_place_type_t<T> tag, F &&func) {
     if constexpr (pr::_reference<T>) {
       const T reference = std::invoke(std::forward<F>(func));
       ::new (m_buffer) std::add_pointer_t<T>(std::addressof(reference));
@@ -130,7 +130,7 @@ struct pointer_storage {
 
   template <typename T, pr::_invocable_r<T> F>
   static constexpr auto
-  make_storage(std::in_place_type_t<T> tag,
+  make_storage([[maybe_unused]] std::in_place_type_t<T> tag,
                F &&func) noexcept(pr::_reference<T>) -> pointer_storage {
     using type = std::remove_cvref_t<T>;
 
@@ -403,13 +403,14 @@ struct inplace_table : pr::_table_base {
     vtable_type m_vtable;
 
     template <typename Policy, pr::implements<interface_type> T>
-    static constexpr auto make_table(std::in_place_type_t<T> tag) -> type {
+    static constexpr auto
+    make_table([[maybe_unused]] std::in_place_type_t<T> tag) -> type {
       return type{.m_vtable = pr::_vtable_v<interface_type, Simple, T, Policy>};
     }
 
     template <pr::trait_of<Simple> Trait>
-    constexpr auto
-    operator[](Trait key) const noexcept -> pr::_function_t<Trait, Simple> * {
+    constexpr auto operator[]([[maybe_unused]] Trait key) const noexcept
+        -> pr::_function_t<Trait, Simple> * {
       return static_cast<const pr::_vtable<Trait, Simple> &>(m_vtable)
           .m_function;
     }
@@ -425,14 +426,15 @@ struct pointer_table : pr::_table_base {
     const vtable_type *m_vtable;
 
     template <typename Policy, pr::implements<interface_type> T>
-    static constexpr auto make_table(std::in_place_type_t<T> tag) -> type {
+    static constexpr auto
+    make_table([[maybe_unused]] std::in_place_type_t<T> tag) -> type {
       return type{.m_vtable = std::addressof(
                       pr::_vtable_v<interface_type, Simple, T, Policy>)};
     }
 
     template <pr::trait_of<Simple> Trait>
-    constexpr auto
-    operator[](Trait key) const noexcept -> pr::_function_t<Trait, Simple> * {
+    constexpr auto operator[]([[maybe_unused]] Trait key) const noexcept
+        -> pr::_function_t<Trait, Simple> * {
       return static_cast<const pr::_vtable<Trait, Simple> *>(m_vtable)
           ->m_function;
     }
