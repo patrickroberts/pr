@@ -250,7 +250,7 @@ This specialization of `std::ranges::enable_borrowed_range` makes `shared_view` 
 </details>
 </details>
 
-## [`include/pr/simpl.hpp`](include/pr/simpl.hpp)
+## [`include/pr/simple.hpp`](include/pr/simple.hpp)
 
 <details>
 <summary><h3 style="display:inline-block">Synopsis</h3></summary>
@@ -258,45 +258,69 @@ This specialization of `std::ranges::enable_borrowed_range` makes `shared_view` 
 ```cpp
 namespace pr {
 
-template <typename T, template <typename...> typename L>
-concept /*type-specialization-of*/ = /* see below */;
-
-template <typename T, template <auto...> typename L>
-concept /*value-specialization-of*/ = /* see below */;
-
-struct trait_base {};
+template <typename T, typename Policy, typename... Ts>
+inline constexpr bool /*enable*/ = false;
 
 template <typename T>
 concept trait = std::is_aggregate_v<T> and std::is_empty_v<T> and
-                std::is_base_of_v<pr::trait_base, T>;
-
-template <pr::trait... Traits>
-struct interface;
+                /*enable*/<T, /*is-trait*/>;
 
 template <typename T>
-concept /*interface*/ = /*type-specialization-of*/<T, pr::interface>;
+concept /*interface*/ = /*enable*/<T, /*is-interface*/>;
 
 template <typename T>
-concept /*table*/ = /* see below */;
-
-struct inplace_table;
-
-struct pointer_table;
+concept /*inplace*/ = /*enable*/<T, /*is-inplace*/>;
 
 template <typename T>
-concept /*storage*/ = /* see below */;
+concept /*pointer*/ = /*enable*/<T, /*is-pointer*/>;
 
-template <typename T, typename Storage>
-concept /*small*/ = /* see below */;
+template <typename T>
+concept /*small*/ = /*enable*/<T, /*is-small*/>;
 
-template <typename Fn, typename R, typename... Args>
-concept /*invocable-r*/ = std::is_invocable_r_v<R, Fn, Args...>;
+template <typename T>
+concept /*small*/ = /*inplace*/<T> or /*pointer*/<T> or /*small*/<T>;
+
+template <typename T>
+concept /*storable-to*/ = /*storage*/<T> and /* see below */;
+
+template <typename T>
+concept /*table*/ = /*enable*/<T, /*is-table*/>;
+
+template <typename T>
+concept /*simple*/ = /*enable*/<T, /*is-simple*/>;
+
+template <typename Trait, typename Simple>
+concept trait_of = pr::trait<Trait> and /*simple*/<Simple> and
+                   /*enable*/<Trait, /*is-trait-of*/, Simple>;
+
+template <typename Simple, typename Trait>
+concept simplifies = pr::trait_of<Trait, Simple>;
+
+template <typename T, typename Trait>
+concept implements = not /*simple*/<std::remove_cvref_t<T>> and
+                     pr::trait<Trait> and Trait::template enable<T>;
+
+template <typename T, typename U>
+concept /*different-from*/ =
+    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
+
+template <typename T, typename Wrapper, typename Interface>
+concept concrete = /*different-from*/<T, Wrapper> and
+                   /*interface*/<Interface> and implements<T, Interface>;
+
+template <typename F, typename R, typename... Args>
+concept /*invocable-r*/ = std::is_invocable_r_v<R, F, Args...>;
 
 template <typename T>
 concept /*reference*/ = std::is_reference_v<T>;
 
 template <typename T>
-concept /*non-reference*/ = not /*reference*/<T>;
+concept /*prvalue*/ = not /*reference*/<T>;
+
+template <typename T, typename Storage>
+concept /*inplace-storable-to*/ =
+    /*storage*/<Storage> and not /*pointer*/<Storage> and
+    /* see below */;
 
 template <std::size_t Size, std::size_t Align = alignof(void *)>
 struct inplace_storage;
@@ -306,52 +330,25 @@ struct pointer_storage;
 template <std::size_t Size, std::size_t Align = alignof(void *)>
 struct small_storage;
 
-template <typename T>
-concept /*inplace-storage*/ =
-    /*storage*/<T> and /*value-specialization-of*/<T, inplace_storage>;
+struct trait_base {};
 
-template <typename T>
-concept /*pointer-storage*/ = /*storage*/<T> and std::same_as<T, pointer_storage>;
+template <pr::trait... Traits>
+struct interface;
 
-template <typename T>
-concept /*small-storage*/ =
-    /*storage*/<T> and /*value-specialization-of*/<T, small_storage>;
+struct move_constructs;
+
+struct inplace_table;
+
+struct pointer_table;
 
 template </*interface*/ Interface,
           /*storage*/ Storage = pr::small_storage<sizeof(void *)>,
           /*table*/ Table = pr::pointer_table>
-class impl;
-
-template <typename T>
-concept /*impl*/ = /*type-specialization-of*/<T, pr::impl>;
-
-template <typename T, typename Trait>
-concept declares = /*impl*/<T> and pr::trait<Trait>;
-
-template <typename T, typename Trait>
-concept implements = not /*impl*/<std::remove_cvref_t<T>> and
-                     pr::trait<Trait> and Trait::template enable<T>;
-
-template <typename T, typename U>
-concept /*different-from*/ =
-    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
-
-template <typename T, typename Wrapper, typename Interface>
-concept concrete = /*different-from*/<T, Wrapper> and /*interface*/<Interface> and
-                   pr::implements<T, Interface>;
-
-template <typename T, typename Storage>
-concept /*storable*/ = /* see below */;
-
-template <typename Trait, typename Impl>
-concept /*trait-of*/ = /* see below */;
-
-template </*interface*/ Interface, /*storage*/ Storage, /*table*/ Table>
-class impl {
+class simple {
 public:
   using interface_type = Interface;
   using storage_type = Storage;
-  using table_type = /* see below */;
+  using table_type = /* unspecified */;
 
 private:
   table_type m_table; // exposition-only
@@ -359,38 +356,49 @@ private:
 
 public:
   template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*inplace-storage*/<storage_type> and /*small*/<T, storage_type>
-  impl(std::in_place_type_t<T> type, F &&f) noexcept(/* see below */);
+    requires /*inplace*/<storage_type> and
+                 /*inplace-storable-to*/<T, storage_type>
+  simple(std::in_place_type_t<T> tag,
+         F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F>);
 
   template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*pointer-storage*/<storage_type> or
-                 /*small-storage*/<storage_type>
-  constexpr impl(std::in_place_type_t<T> type, F &&f);
+    requires /*pointer*/<storage_type> or /*small*/<storage_type>
+  constexpr simple(std::in_place_type_t<T> tag,
+                   F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F> and
+                                      /*reference*/<T>);
 
   template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*small-storage*/<storage_type> and
-                 /*small*/<T, storage_type> and /*non-reference*/<T>
-  constexpr impl(std::in_place_type_t<T> type, F &&f);
+    requires /*small*/<storage_type> and
+                 /*inplace-storable-to*/<T, storage_type> and /*prvalue*/<T>
+  constexpr simple(std::in_place_type_t<T> tag,
+                   F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F>);
 
   template <pr::implements<interface_type> T, typename... Args>
-    requires /*storable*/<T, storage_type> and
+    requires /*storable-to*/<T, storage_type> and
              std::constructible_from<T, Args &&...>
-  constexpr impl(std::in_place_type_t<T> type, Args &&...args) noexcept(
+  constexpr simple(std::in_place_type_t<T> tag, Args &&...args) noexcept(
+      std::is_nothrow_constructible_v<T, Args &&...> and
       /* see below */);
 
   template <pr::implements<interface_type> T>
-    requires /*storable*/<T, storage_type> and std::constructible_from<T, T &&>
-  constexpr impl(T &&object) noexcept(/* see below */);
+    requires /*storable-to*/<T, storage_type> and
+             std::constructible_from<T, T &&>
+  constexpr simple(T &&object) noexcept(
+      std::is_nothrow_constructible_v<T, T &&> and /* see below */);
 
-  impl(const impl &) = delete;
-  impl(impl &&) = delete;
+  template <pr::implements<interface_type> T>
+    requires /*pointer*/<storage_type> or /*small*/<storage_type>
+  constexpr simple(std::unique_ptr<T> &&ptr) noexcept;
 
-  auto operator=(const impl &) -> impl & = delete;
-  auto operator=(impl &&) -> impl & = delete;
+  simple(const simple &) = delete;
+  simple(simple &&) = delete;
 
-  constexpr auto operator[](/*trait-of*/<impl> auto trait) const noexcept;
+  auto operator=(const simple &) -> simple & = delete;
+  auto operator=(simple &&) -> simple & = delete;
 
-  constexpr ~impl() noexcept(/*inplace-storage*/<storage_type>);
+  constexpr auto operator[](pr::trait_of<simple> auto trait) const noexcept;
+
+  constexpr ~simple() noexcept(/*inplace*/<storage_type>);
 };
 
 } // namespace pr
@@ -402,13 +410,13 @@ public:
 <summary><h3 style="display:inline-block">Example</h3></summary>
 
 ```cpp
-#include <pr/simpl.hpp>
+#include <pr/simple.hpp>
 
 struct copy_constructs : pr::trait_base {
   template <std::copy_constructible T>
   static constexpr bool enable = true;
 
-  template <pr::declares<copy_constructs> T>
+  template <pr::simplifies<copy_constructs> T>
   static constexpr auto fn(const T &object) -> T;
 
   template <pr::implements<copy_constructs> T>
@@ -423,7 +431,7 @@ struct speaks : pr::trait_base {
     { object.speak() } -> std::convertible_to<std::string>;
   };
 
-  template <pr::declares<speaks> T>
+  template <pr::simplifies<speaks> T>
   static constexpr auto fn(const T &object) -> std::string;
 
   template <pr::implements<speaks> T>
@@ -435,7 +443,7 @@ struct speaks : pr::trait_base {
 class animal {
   using interface_type = pr::interface<copy_constructs, speaks>;
 
-  pr::impl<interface_type> impl;
+  pr::simple<interface_type> impl;
 
 public:
   template <pr::concrete<animal, interface_type> T>

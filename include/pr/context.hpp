@@ -35,6 +35,9 @@ public:
   provider_(const provider_ &) = delete;
   provider_(provider_ &&) = delete;
 
+  auto operator=(const provider_ &) -> provider_ & = delete;
+  auto operator=(provider_ &&) -> provider_ & = delete;
+
   ~provider_() noexcept { context_<value_type> = outer_; }
 };
 
