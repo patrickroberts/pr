@@ -409,6 +409,8 @@ public:
 <details>
 <summary><h3 style="display:inline-block">Example</h3></summary>
 
+See it on [Compiler Explorer](https://godbolt.org/z/7d4MGh5E4)
+
 ```cpp
 #include <pr/simple.hpp>
 
