@@ -93,36 +93,24 @@ Returns `/*context*/<value_type>`, whose value has been initialized by thread-lo
 
 ```cpp
 namespace pr {
-namespace ranges {
+  namespace ranges {
 
-template <class T>
-concept copyable_view = /* see description */;
+    template <class T>
+    concept copyable_view = /* see description */;
 
-template <std::ranges::viewable_range RangeT>
-  requires std::is_object_v<RangeT>
-class shared_view : public std::ranges::view_interface<shared_view<RangeT>> {
-  std::shared_ptr<RangeT> base_; // exposition-only
+    template <class T>
+    concept shared_range = /* see description */;
 
-public:
-  shared_view() requires std::default_initializable<RangeT>;
+    template <std::ranges::viewable_range R>
+      requires std::movable<R>
+    class shared_view;
 
-  explicit shared_view(RangeT &&base);
+    namespace views {
+      inline constexpr /* unspecified */ shared = /* unspecified */;
+    } // namespace views
+  } // namespace ranges
 
-  auto base() const noexcept -> RangeT &;
-
-  auto begin() -> std::ranges::iterator_t<RangeT>;
-
-  auto end() -> std::ranges::sentinel_t<RangeT>;
-};
-
-namespace views {
-
-inline constexpr /* unspecified */ shared = /* unspecified*/;
-
-} // namespace views
-} // namespace ranges
-
-namespace views = ranges::views;
+  namespace views = ranges::views;
 
 } // namespace pr
 
@@ -145,8 +133,7 @@ inline constexpr bool
 namespace pr::ranges {
 
   template <class T>
-  concept copyable_view =
-    std::ranges::view<T> and std::copyable<T>;
+  concept copyable_view = std::ranges::view<T> and std::copyable<T>;
 
 }
 ```
@@ -158,14 +145,36 @@ The `pr::ranges::copyable_view` concept is a refinement of `std::ranges::view` f
 ---
 
 <details>
-<summary><h3 style="display:inline-block"><code>pr::views::shared</code></h3></summary>
+<summary><h3 style="display:inline-block"><code>pr::ranges::shared_range</code></h3></summary>
+
+#### Concept
+
+```cpp
+namespace pr::ranges {
+
+  template <class T>
+  concept shared_range =
+      std::ranges::viewable_range<T> and
+      std::copyable<std::views::all_t<T>>;
+
+}
+```
+
+The `pr::ranges::shared_range` concept is a refinement of `std::ranges::viewable_range` for which `std::copyable` is satisfied by `std::views::all_t<T>`.
+
+</details>
+
+---
+
+<details>
+<summary><h3 style="display:inline-block"><code>pr::ranges::views::shared</code></h3></summary>
 
 #### Call signature
 
 ```cpp
-template <std::ranges::viewable_range RangeT>
-    requires /* see below */
-constexpr auto shared(RangeT &&range) -> copyable_view auto;
+template <std::ranges::viewable_range R>
+  requires shared_range<R> or std::movable<R>
+[[nodiscard]] constexpr auto shared(R &&range) -> copyable_view auto;
 ```
 
 Given an expression `e` of type `T`, the expression `pr::views::shared(e)` is expression-equivalent to:
@@ -179,59 +188,68 @@ Given an expression `e` of type `T`, the expression `pr::views::shared(e)` is ex
 <details>
 <summary><h3 style="display:inline-block"><code>pr::ranges::shared_view</code></h3></summary>
 
+```cpp
+template <std::ranges::viewable_range R>
+  requires std::movable<R>
+class shared_view
+    : public std::ranges::view_interface<shared_view<R>>
+```
+
+A view that has shared ownership of a range. It wraps a shared pointer to that range.
+
 <details>
 <summary><h4 style="display:inline-block">Data members</h4></summary>
 
-| Member object     | Definition                                                                    |
-| ----------------- | ----------------------------------------------------------------------------- |
-| `base_` (private) | A `std::shared_ptr` of the underlying range. (exposition-only member object*) |
+| Member object                            | Definition                                                                 |
+| ---------------------------------------- | -------------------------------------------------------------------------- |
+| `std::shared_ptr<R> range_ptr` (private) | A shared pointer to the underlying range. (exposition-only member object*) |
 
 </details>
 
 <details>
 <summary><h4 style="display:inline-block">Member functions</h4></summary>
 
-#### `pr::ranges::shared_view<RangeT>::shared_view`
+#### `pr::ranges::shared_view<R>::shared_view`
 
-| <!-- -->                                                     | <!-- --> |
-| ------------------------------------------------------------ | -------- |
-| `shared_view() requires std::default_initializable<RangeT>;` | (1)      |
-| `explicit shared_view(RangeT &&base);`                       | (2)      |
+| <!-- -->                                                | <!-- --> |
+| ------------------------------------------------------- | -------- |
+| `shared_view() requires std::default_initializable<R>;` | (1)      |
+| `explicit shared_view(R &&base);`                       | (2)      |
 
 Constructs a `shared_view`.
 
-1) Default constructor. Initializes `base_` as if by `base_(std::make_shared<RangeT>())`.
-2) Initializes the underlying `base_` with `std::make_shared<RangeT>(std::move(base))`.
+1) Default constructor. Initializes `range_ptr` as if by `range_ptr(std::make_shared<R>())`.
+2) Initializes the underlying `range_ptr` with `std::make_shared<R>(std::move(base))`.
 
 ---
 
-#### `pr::ranges::shared_view<RangeT>::base`
+#### `pr::ranges::shared_view<R>::base`
 
-| <!-- -->                                 |
-| ---------------------------------------- |
-| `auto base() const noexcept -> RangeT &` |
+| <!-- -->                                          |
+| ------------------------------------------------- |
+| `[[nodiscard]] auto base() const noexcept -> R &` |
 
-Equivalent to `return *base_;`.
-
----
-
-#### `pr::ranges::shared_view<RangeT>::begin`
-
-| <!-- -->                                           |
-| -------------------------------------------------- |
-| `auto begin() -> std::ranges::iterator_t<RangeT>;` |
-
-Equivalent to `return std::ranges::begin(*base_);`.
+Returns `*range_ptr`.
 
 ---
 
-#### `pr::ranges::shared_view<RangeT>::end`
+#### `pr::ranges::shared_view<R>::begin`
 
-| <!-- -->                                         |
-| ------------------------------------------------ |
-| `auto end() -> std::ranges::iterator_t<RangeT>;` |
+| <!-- -->                                                          |
+| ----------------------------------------------------------------- |
+| `[[nodiscard]] auto begin() const -> std::ranges::iterator_t<R>;` |
 
-Equivalent to `return std::ranges::end(*base_);`.
+Returns `std::ranges::begin(*range_ptr)`.
+
+---
+
+#### `pr::ranges::shared_view<R>::end`
+
+| <!-- -->                                                        |
+| --------------------------------------------------------------- |
+| `[[nodiscard]] auto end() const -> std::ranges::iterator_t<R>;` |
+
+Returns `std::ranges::end(*range_ptr)`.
 
 </details>
 
@@ -248,235 +266,4 @@ inline constexpr bool
 This specialization of `std::ranges::enable_borrowed_range` makes `shared_view` satisfy `borrowed_range` when the underlying range satisfies it. 
 
 </details>
-</details>
-
-## [`include/pr/simple.hpp`](include/pr/simple.hpp)
-
-<details>
-<summary><h3 style="display:inline-block">Synopsis</h3></summary>
-
-```cpp
-namespace pr {
-
-template <typename T, typename Policy, typename... Ts>
-inline constexpr bool /*enable*/ = false;
-
-template <typename T>
-concept trait = std::is_aggregate_v<T> and std::is_empty_v<T> and
-                /*enable*/<T, /*is-trait*/>;
-
-template <typename T>
-concept /*interface*/ = /*enable*/<T, /*is-interface*/>;
-
-template <typename T>
-concept /*inplace*/ = /*enable*/<T, /*is-inplace*/>;
-
-template <typename T>
-concept /*pointer*/ = /*enable*/<T, /*is-pointer*/>;
-
-template <typename T>
-concept /*small*/ = /*enable*/<T, /*is-small*/>;
-
-template <typename T>
-concept /*small*/ = /*inplace*/<T> or /*pointer*/<T> or /*small*/<T>;
-
-template <typename T>
-concept /*storable-to*/ = /*storage*/<T> and /* see below */;
-
-template <typename T>
-concept /*table*/ = /*enable*/<T, /*is-table*/>;
-
-template <typename T>
-concept /*simple*/ = /*enable*/<T, /*is-simple*/>;
-
-template <typename Trait, typename Simple>
-concept trait_of = pr::trait<Trait> and /*simple*/<Simple> and
-                   /*enable*/<Trait, /*is-trait-of*/, Simple>;
-
-template <typename Simple, typename Trait>
-concept simplifies = pr::trait_of<Trait, Simple>;
-
-template <typename T, typename Trait>
-concept implements = not /*simple*/<std::remove_cvref_t<T>> and
-                     pr::trait<Trait> and Trait::template enable<T>;
-
-template <typename T, typename U>
-concept /*different-from*/ =
-    not std::same_as<std::remove_cvref_t<T>, std::remove_cvref_t<U>>;
-
-template <typename T, typename Wrapper, typename Interface>
-concept concrete = /*different-from*/<T, Wrapper> and
-                   /*interface*/<Interface> and implements<T, Interface>;
-
-template <typename F, typename R, typename... Args>
-concept /*invocable-r*/ = std::is_invocable_r_v<R, F, Args...>;
-
-template <typename T>
-concept /*reference*/ = std::is_reference_v<T>;
-
-template <typename T>
-concept /*prvalue*/ = not /*reference*/<T>;
-
-template <typename T, typename Storage>
-concept /*inplace-storable-to*/ =
-    /*storage*/<Storage> and not /*pointer*/<Storage> and
-    /* see below */;
-
-template <std::size_t Size, std::size_t Align = alignof(void *)>
-struct inplace_storage;
-
-struct pointer_storage;
-
-template <std::size_t Size, std::size_t Align = alignof(void *)>
-struct small_storage;
-
-struct trait_base {};
-
-template <pr::trait... Traits>
-struct interface;
-
-struct move_constructs;
-
-struct inplace_table;
-
-struct pointer_table;
-
-template </*interface*/ Interface,
-          /*storage*/ Storage = pr::small_storage<sizeof(void *)>,
-          /*table*/ Table = pr::pointer_table>
-class simple {
-public:
-  using interface_type = Interface;
-  using storage_type = Storage;
-  using table_type = /* unspecified */;
-
-private:
-  table_type m_table; // exposition-only
-  storage_type m_storage; // exposition-only
-
-public:
-  template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*inplace*/<storage_type> and
-                 /*inplace-storable-to*/<T, storage_type>
-  simple(std::in_place_type_t<T> tag,
-         F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F>);
-
-  template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*pointer*/<storage_type> or /*small*/<storage_type>
-  constexpr simple(std::in_place_type_t<T> tag,
-                   F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F> and
-                                      /*reference*/<T>);
-
-  template <pr::implements<interface_type> T, /*invocable-r*/<T> F>
-    requires /*small*/<storage_type> and
-                 /*inplace-storable-to*/<T, storage_type> and /*prvalue*/<T>
-  constexpr simple(std::in_place_type_t<T> tag,
-                   F &&func) noexcept(std::is_nothrow_invocable_r_v<T, F>);
-
-  template <pr::implements<interface_type> T, typename... Args>
-    requires /*storable-to*/<T, storage_type> and
-             std::constructible_from<T, Args &&...>
-  constexpr simple(std::in_place_type_t<T> tag, Args &&...args) noexcept(
-      std::is_nothrow_constructible_v<T, Args &&...> and
-      /* see below */);
-
-  template <pr::implements<interface_type> T>
-    requires /*storable-to*/<T, storage_type> and
-             std::constructible_from<T, T &&>
-  constexpr simple(T &&object) noexcept(
-      std::is_nothrow_constructible_v<T, T &&> and /* see below */);
-
-  template <pr::implements<interface_type> T>
-    requires /*pointer*/<storage_type> or /*small*/<storage_type>
-  constexpr simple(std::unique_ptr<T> &&ptr) noexcept;
-
-  simple(const simple &) = delete;
-  simple(simple &&) = delete;
-
-  auto operator=(const simple &) -> simple & = delete;
-  auto operator=(simple &&) -> simple & = delete;
-
-  constexpr auto operator[](pr::trait_of<simple> auto trait) const noexcept;
-
-  constexpr ~simple() noexcept(/*inplace*/<storage_type>);
-};
-
-} // namespace pr
-```
-
-</details>
-
-<details>
-<summary><h3 style="display:inline-block">Example</h3></summary>
-
-See it on [Compiler Explorer](https://godbolt.org/z/7d4MGh5E4)
-
-```cpp
-#include <pr/simple.hpp>
-
-struct copy_constructs : pr::trait_base {
-  template <std::copy_constructible T>
-  static constexpr bool enable = true;
-
-  template <pr::simplifies<copy_constructs> T>
-  static constexpr auto fn(const T &object) -> T;
-
-  template <pr::implements<copy_constructs> T>
-  static constexpr auto fn(const T &object) -> T {
-    return T(object);
-  }
-};
-
-struct speaks : pr::trait_base {
-  template <typename T>
-  static constexpr bool enable = requires(const T &object) {
-    { object.speak() } -> std::convertible_to<std::string>;
-  };
-
-  template <pr::simplifies<speaks> T>
-  static constexpr auto fn(const T &object) -> std::string;
-
-  template <pr::implements<speaks> T>
-  static constexpr auto fn(const T &object) -> std::string {
-    return object.speak();
-  }
-};
-
-class animal {
-  using interface_type = pr::interface<copy_constructs, speaks>;
-
-  pr::simple<interface_type> impl;
-
-public:
-  template <pr::concrete<animal, interface_type> T>
-  constexpr animal(T &&object) : impl(std::forward<T>(object)) {}
-
-  constexpr animal(const animal &other)
-      : impl(other.impl[copy_constructs{}](other.impl)) {}
-
-  constexpr auto speak() const -> std::string { return impl[speaks{}](impl); }
-};
-
-struct cow {
-  constexpr auto speak() const { return "moo"; }
-};
-
-struct pig {
-  constexpr auto speak() const { return "oink"; }
-};
-
-struct dog {
-  constexpr auto speak() const { return "woof"; }
-};
-
-// compiles with -std=c++26 using [p2738]
-static_assert([] {
-  std::vector<animal> animals{cow{}, pig{}, dog{}};
-
-  return animals[0].speak() == "moo" and
-         animals[1].speak() == "oink" and
-         animals[2].speak() == "woof";
-}());
-```
-
 </details>

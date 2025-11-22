@@ -9,42 +9,52 @@ namespace ranges {
 template <class T>
 concept copyable_view = std::ranges::view<T> and std::copyable<T>;
 
-template <std::ranges::viewable_range RangeT>
-  requires std::is_object_v<RangeT>
-class shared_view : public std::ranges::view_interface<shared_view<RangeT>> {
-  std::shared_ptr<RangeT> base_;
+template <class T>
+concept shared_range =
+    std::ranges::viewable_range<T> and std::copyable<std::views::all_t<T>>;
+
+template <std::ranges::viewable_range R>
+  requires std::movable<R>
+class shared_view : public std::ranges::view_interface<shared_view<R>> {
+  std::shared_ptr<R> range_ptr;
 
 public:
   shared_view()
-    requires std::default_initializable<RangeT>
-      : base_(std::make_shared<RangeT>()) {}
+    requires std::default_initializable<R>
+      : range_ptr(std::make_shared<R>()) {}
 
-  explicit shared_view(RangeT &&base)
-      : base_(std::make_shared<RangeT>(std::move(base))) {}
+  explicit shared_view(R &&range)
+      : range_ptr(std::make_shared<R>(std::move(range))) {}
 
-  auto base() const noexcept -> RangeT & { return *base_; }
+  [[nodiscard]] auto base() const noexcept -> R & { return *range_ptr; }
 
-  auto begin() -> std::ranges::iterator_t<RangeT> {
-    return std::ranges::begin(*base_);
+  [[nodiscard]] auto begin() const
+      noexcept(noexcept(std::ranges::begin(*range_ptr)))
+          -> std::ranges::iterator_t<R> {
+    return std::ranges::begin(*range_ptr);
   }
 
-  auto end() -> std::ranges::sentinel_t<RangeT> {
-    return std::ranges::end(*base_);
+  [[nodiscard]] auto end() const
+      noexcept(noexcept(std::ranges::end(*range_ptr)))
+          -> std::ranges::sentinel_t<R> {
+    return std::ranges::end(*range_ptr);
   }
 };
 
 namespace views {
 namespace detail {
 
-struct shared_fn {
-  template <std::ranges::viewable_range RangeT>
-    requires std::copyable<std::views::all_t<RangeT>> or
-                 std::is_object_v<RangeT>
-  constexpr auto operator()(RangeT &&range) const -> copyable_view auto {
-    if constexpr (std::copyable<std::views::all_t<RangeT>>) {
-      return std::views::all(std::forward<RangeT>(range));
+struct shared_fn : std::ranges::range_adaptor_closure<shared_fn> {
+  template <std::ranges::viewable_range R>
+    requires shared_range<R> or std::movable<R>
+  [[nodiscard]] constexpr auto operator()(R &&range) const
+      noexcept(shared_range<R> and
+               noexcept(std::views::all(std::forward<R>(range))))
+          -> copyable_view auto {
+    if constexpr (shared_range<R>) {
+      return std::views::all(std::forward<R>(range));
     } else {
-      return shared_view{std::forward<RangeT>(range)};
+      return shared_view{std::forward<R>(range)};
     }
   }
 };
@@ -52,6 +62,10 @@ struct shared_fn {
 } // namespace detail
 
 inline constexpr detail::shared_fn shared{};
+
+template <std::ranges::viewable_range R>
+  requires shared_range<R> or std::movable<R>
+using shared_t = decltype(views::shared(std::declval<R>()));
 
 } // namespace views
 } // namespace ranges
