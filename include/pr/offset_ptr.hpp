@@ -46,10 +46,16 @@ class offset_ptr : public offset_ptr_interface<
 
   alignas(Align) Offset offset{null_offset};
 
-  [[nodiscard]] auto offset_from(non_null_t /**/, T *other) const noexcept
-      -> Offset {
-    return static_cast<Offset>(std::bit_cast<std::uintptr_t>(other) -
-                               std::bit_cast<std::uintptr_t>(this));
+  [[nodiscard]] auto offset_from([[maybe_unused]] non_null_t non_null,
+                                 T *other) const noexcept -> Offset {
+    const auto offset = std::bit_cast<std::uintptr_t>(other) -
+                        std::bit_cast<std::uintptr_t>(this);
+
+    if constexpr (std::unsigned_integral<Offset>) {
+      return static_cast<Offset>(offset);
+    } else {
+      return static_cast<Offset>(std::bit_cast<std::intptr_t>(offset));
+    }
   }
 
   [[nodiscard]] constexpr auto offset_from(T *other) const noexcept -> Offset {
