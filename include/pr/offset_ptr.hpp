@@ -36,50 +36,49 @@ inline constexpr non_null_t non_null{};
 template <class Derived>
 class offset_ptr_interface;
 
-template <is::element T, std::signed_integral Difference = std::ptrdiff_t,
-          std::integral Offset = std::uintptr_t,
-          std::size_t Align = alignof(Offset), Offset Null = 1>
+template <is::element T, std::signed_integral Diff = std::ptrdiff_t,
+          std::integral Rep = std::uintptr_t, std::size_t Align = alignof(Rep),
+          Rep Null = 1>
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
-class offset_ptr : public offset_ptr_interface<
-                       offset_ptr<T, Difference, Offset, Align, Null>> {
+class offset_ptr
+    : public offset_ptr_interface<offset_ptr<T, Diff, Rep, Align, Null>> {
   friend offset_ptr_interface<offset_ptr>;
 
-  alignas(Align) Offset offset{null_offset};
+  alignas(Align) Rep offset{null_offset};
 
   [[nodiscard]] auto offset_from([[maybe_unused]] non_null_t non_null,
-                                 T *other) const noexcept -> Offset {
-    const auto offset = std::bit_cast<std::uintptr_t>(other) -
-                        std::bit_cast<std::uintptr_t>(this);
+                                 T *other) const noexcept -> Rep {
+    const auto offset =
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<std::uintptr_t>(other) -
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+        reinterpret_cast<std::uintptr_t>(this);
 
-    if constexpr (std::unsigned_integral<Offset>) {
-      return static_cast<Offset>(offset);
+    if constexpr (std::unsigned_integral<Rep>) {
+      return static_cast<Rep>(offset);
     } else {
-      return static_cast<Offset>(std::bit_cast<std::intptr_t>(offset));
+      return static_cast<Rep>(std::bit_cast<std::intptr_t>(offset));
     }
   }
 
-  [[nodiscard]] constexpr auto offset_from(T *other) const noexcept -> Offset {
+  [[nodiscard]] constexpr auto offset_from(T *other) const noexcept -> Rep {
     return other ? offset_from(non_null, other) : null_offset;
   }
 
   [[nodiscard]] constexpr auto
-  offset_from(const offset_ptr &other) const noexcept -> Offset {
+  offset_from(const offset_ptr &other) const noexcept -> Rep {
     return other ? offset_from(non_null, std::to_address(other)) : null_offset;
   }
 
 public:
   using element_type = T;
   using pointer = T *;
-  using offset_type = Offset;
+  using rep = Rep;
 
   template <class U>
-  using rebind = offset_ptr<U, Difference, Offset, Align, Null>;
+  using rebind = offset_ptr<U, Diff, Rep, Align, Null>;
 
-  static auto pointer_to(element_type &other) noexcept -> offset_ptr {
-    return offset_ptr(non_null, std::addressof(other));
-  }
-
-  static constexpr offset_type null_offset = Null;
+  static constexpr rep null_offset = Null;
 
   offset_ptr() = default;
 
@@ -96,17 +95,20 @@ public:
   constexpr offset_ptr(const offset_ptr &other) noexcept
       : offset(offset_from(other)) {}
 
-  template <is::pointer_convertible_to<T> U, class D, class O, std::size_t A,
-            O N>
+  offset_ptr(non_null_t non_null, const offset_ptr &other) noexcept
+      : offset(offset_from(non_null, std::to_address(other))) {}
+
+  template <is::pointer_convertible_to<T> U, class D, class R, std::size_t A,
+            R N>
   constexpr explicit(is::explicitly_pointer_convertible_to<U, T> or
-                     is::narrowing_to<O, Offset>)
-      offset_ptr(const offset_ptr<U, D, O, A, N> &other) noexcept
+                     is::narrowing_to<R, Rep>)
+      offset_ptr(const offset_ptr<U, D, R, A, N> &other) noexcept
       : offset(offset_from(other)) {}
 
-  template <is::pointer_convertible_to<T> U, class D, class O, std::size_t A,
-            O N>
+  template <is::pointer_convertible_to<T> U, class D, class R, std::size_t A,
+            R N>
   explicit offset_ptr(non_null_t non_null,
-                      const offset_ptr<U, D, O, A, N> &other) noexcept
+                      const offset_ptr<U, D, R, A, N> &other) noexcept
       : offset(offset_from(non_null, std::to_address(other))) {}
 
   constexpr auto operator=(std::nullptr_t) noexcept -> offset_ptr & {
@@ -137,7 +139,9 @@ public:
   ~offset_ptr() = default;
 
   [[nodiscard]] auto operator->() const noexcept -> pointer {
-    return std::bit_cast<T *>(std::bit_cast<std::uintptr_t>(this) + offset);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast,performance-no-int-to-ptr)
+    return reinterpret_cast<T *>(reinterpret_cast<std::uintptr_t>(this) +
+                                 offset);
   }
 
   [[nodiscard]] constexpr auto get() const noexcept -> pointer {
@@ -148,22 +152,27 @@ public:
     return offset != null_offset;
   }
 
-  template <class U, class D, class O, std::size_t A, O N>
+  template <class U, class D, class R, std::size_t A, R N>
   [[nodiscard]] constexpr auto
-  operator<=>(const offset_ptr<U, D, O, A, N> &other) const noexcept
+  operator<=>(const offset_ptr<U, D, R, A, N> &other) const noexcept
       -> std::weak_ordering {
     return get() <=> other.get();
   }
 
-  template <class U, class D, class O, std::size_t A, O N>
+  template <class U, class D, class R, std::size_t A, R N>
   [[nodiscard]] constexpr auto
-  operator==(const offset_ptr<U, D, O, A, N> &other) const noexcept -> bool {
+  operator==(const offset_ptr<U, D, R, A, N> &other) const noexcept -> bool {
     return get() == other.get();
   }
 
-  [[nodiscard]] constexpr auto operator<=>(std::nullptr_t) const noexcept
-      -> std::weak_ordering {
-    return get() <=> static_cast<pointer>(nullptr);
+  [[nodiscard]] constexpr auto
+  operator<=>(const offset_ptr &other) const noexcept -> std::weak_ordering {
+    return get() <=> other.get();
+  }
+
+  [[nodiscard]] constexpr auto
+  operator==(const offset_ptr &other) const noexcept -> bool {
+    return get() == other.get();
   }
 
   [[nodiscard]] constexpr auto operator==(std::nullptr_t) const noexcept
@@ -175,16 +184,15 @@ public:
 template <class T>
 offset_ptr(T *) -> offset_ptr<T>;
 
-template <class T, class Difference, class Offset, std::size_t Align,
-          Offset Null>
+template <class T, class Diff, class Rep, std::size_t Align, Rep Null>
   requires std::is_void_v<T>
-class offset_ptr_interface<offset_ptr<T, Difference, Offset, Align, Null>> {};
+class offset_ptr_interface<offset_ptr<T, Diff, Rep, Align, Null>> {};
 
-template <class T, class Difference, class Offset, std::size_t Align,
-          Offset Null>
-  requires std::is_object_v<T>
-class offset_ptr_interface<offset_ptr<T, Difference, Offset, Align, Null>> {
-  using derived_type = offset_ptr<T, Difference, Offset, Align, Null>;
+template <class T, class Diff, class Rep, std::size_t Align, Rep Null>
+class offset_ptr_interface<offset_ptr<T, Diff, Rep, Align, Null>> {
+  static_assert(std::is_object_v<T>);
+
+  using derived_type = offset_ptr<T, Diff, Rep, Align, Null>;
 
   [[nodiscard]] auto derived() noexcept -> derived_type & {
     return static_cast<derived_type &>(*this);
@@ -196,9 +204,13 @@ class offset_ptr_interface<offset_ptr<T, Difference, Offset, Align, Null>> {
 
 public:
   using reference = T &;
-  using difference_type = Difference;
+  using difference_type = Diff;
   using iterator_category = std::random_access_iterator_tag;
   using iterator_concept = std::contiguous_iterator_tag;
+
+  static auto pointer_to(reference other) noexcept -> derived_type {
+    return derived_type(non_null, std::addressof(other));
+  }
 
   [[nodiscard]] auto operator*() const noexcept -> reference {
     return *std::to_address(derived());
@@ -256,18 +268,16 @@ public:
   auto operator++() noexcept -> derived_type & { return derived() += 1; }
 
   [[nodiscard]] auto operator++(int) noexcept -> derived_type {
-    auto &self = derived();
-    auto other = self;
-    ++self;
+    auto other = derived();
+    ++*this;
     return other;
   }
 
   auto operator--() noexcept -> derived_type & { return derived() -= 1; }
 
   [[nodiscard]] auto operator--(int) noexcept -> derived_type {
-    auto &self = derived();
-    auto other = self;
-    --self;
+    auto other = derived();
+    --*this;
     return other;
   }
 };
