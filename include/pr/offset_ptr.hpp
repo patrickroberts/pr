@@ -184,6 +184,9 @@ public:
 template <class T>
 offset_ptr(T *) -> offset_ptr<T>;
 
+template <class T>
+offset_ptr(non_null_t, T *) -> offset_ptr<T>;
+
 template <class T, class Diff, class Rep, std::size_t Align, Rep Null>
   requires std::is_void_v<T>
 class offset_ptr_interface<offset_ptr<T, Diff, Rep, Align, Null>> {};
