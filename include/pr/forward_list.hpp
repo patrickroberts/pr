@@ -6,6 +6,22 @@
 namespace pr {
 namespace detail {
 
+template <class T, class Allocator>
+struct node {
+  using node_traits =
+      std::allocator_traits<Allocator>::template rebind_traits<node>;
+  using node_pointer = node_traits::pointer;
+
+  node_pointer m_next = node_pointer();
+  T m_value;
+
+  template <class... Args>
+    requires std::constructible_from<T, Args...>
+  constexpr node(Args &&...args) noexcept(
+      std::is_nothrow_constructible_v<T, Args...>)
+      : m_value(std::forward<Args>(args)...) {}
+};
+
 // do not assume fancy pointers are constexpr default constructible
 template <class Ptr>
 inline const Ptr tail = Ptr();
@@ -16,7 +32,7 @@ template <class Ptr>
 inline constexpr Ptr tail<Ptr> = Ptr();
 
 template <class T>
-struct default_construct {
+struct default_generator {
   constexpr auto operator()() const
       noexcept(std::is_nothrow_default_constructible_v<T>) -> T {
     return T();
@@ -24,21 +40,53 @@ struct default_construct {
 };
 
 template <class T>
-struct projection {
+struct copy_generator {
   T *m_ptr;
 
   constexpr auto operator()() const noexcept -> T & { return *m_ptr; }
 };
+
+template <class Generator>
+constexpr auto repeat(std::size_t count, Generator generator) noexcept {
+  return std::views::repeat(std::move(generator), count) |
+         std::views::transform(
+             [](const Generator &generator) noexcept(
+                 std::is_nothrow_invocable_v<const Generator &>)
+                 -> std::invoke_result_t<const Generator &> {
+               return generator();
+             });
+}
+
+template <class T>
+constexpr auto repeat_default(std::size_t count) noexcept {
+  return repeat(count, default_generator<T>{});
+}
+
+template <class T>
+constexpr auto repeat_copy(std::size_t count, const T &value) noexcept {
+  return repeat(count, copy_generator{std::addressof(value)});
+}
+
+template <class T>
+struct synth_three_way_result {
+  using type = std::weak_ordering;
+};
+
+template <std::three_way_comparable T>
+struct synth_three_way_result<T> {
+  using type = std::compare_three_way_result_t<T>;
+};
+
+template <class T>
+using synth_three_way_result_t = synth_three_way_result<T>::type;
 
 } // namespace detail
 
 template <class T, class Allocator = std::allocator<T>>
 class forward_list {
   using alloc_traits = std::allocator_traits<Allocator>;
-
-  struct node_type;
-
-  using node_traits = alloc_traits::template rebind_traits<node_type>;
+  using node_type = detail::node<T, Allocator>;
+  using node_traits = node_type::node_traits;
   using node_alloc = node_traits::allocator_type;
   using node_pointer = node_traits::pointer;
   using link_pointer =
@@ -48,20 +96,7 @@ class forward_list {
   [[no_unique_address]] node_alloc m_alloc = node_alloc();
   node_pointer m_head = node_pointer();
 
-  static constexpr auto repeat_default(std::size_t count) noexcept {
-    using type = detail::default_construct<T>;
-    return std::views::repeat(type{}, count) |
-           std::views::transform(std::invoke<type>);
-  }
-
-  static constexpr auto repeat_copy(std::size_t count,
-                                    const T &value) noexcept {
-    using type = detail::projection<const T>;
-    return std::views::repeat(type{std::addressof(value)}, count) |
-           std::views::transform(std::invoke<type>);
-  }
-
-  template <class Range>
+  template <bool Propagate, class Range>
   constexpr void safe_assign(Range &&range, const Allocator &alloc) {
     forward_list<T, Allocator> temp(alloc);
 
@@ -69,8 +104,31 @@ class forward_list {
     auto last = temp.insert_range(first, std::forward<Range>(range));
 
     clear();
-    m_alloc = temp.m_alloc;
+    if constexpr (Propagate) {
+      m_alloc = temp.m_alloc;
+    }
     splice(begin(), std::move(first), std::move(last));
+  }
+
+  template <class Generator>
+  constexpr void resize_impl(std::size_t count, Generator generator) {
+    auto first = begin();
+    const auto last = end();
+    const auto size =
+        static_cast<size_type>(std::ranges::advance(first, count, last));
+
+    if (size >= count) {
+      erase(std::move(first), last);
+    } else {
+      insert_range(std::move(first),
+                   detail::repeat(count - size, std::move(generator)));
+    }
+  }
+
+  constexpr void splice_impl(node_pointer &pos, node_pointer &first,
+                             node_pointer &last) noexcept {
+    auto old = std::exchange(first, last);
+    last = std::exchange(pos, std::move(old));
   }
 
 public:
@@ -93,11 +151,13 @@ public:
 
   constexpr explicit forward_list(size_type count,
                                   const Allocator &alloc = Allocator())
-      : forward_list(std::from_range, repeat_default(count), alloc) {}
+      : forward_list(std::from_range, detail::repeat_default<T>(count), alloc) {
+  }
 
   constexpr forward_list(size_type count, const T &value,
                          const Allocator &alloc = Allocator())
-      : forward_list(std::from_range, repeat_copy(count, value), alloc) {}
+      : forward_list(std::from_range, detail::repeat_copy(count, value),
+                     alloc) {}
 
   template <std::input_iterator Iterator, std::sentinel_for<Iterator> Sentinel>
   constexpr forward_list(Iterator first, Sentinel last,
@@ -133,10 +193,10 @@ public:
       return *this;
     }
 
-    safe_assign(other,
-                alloc_traits::propagate_on_container_copy_assignment::value
-                    ? other.get_allocator()
-                    : get_allocator());
+    constexpr auto pocca =
+        alloc_traits::propagate_on_container_copy_assignment::value;
+
+    safe_assign<pocca>(other, pocca ? other.get_allocator() : get_allocator());
 
     return *this;
   }
@@ -149,10 +209,12 @@ public:
       return *this;
     }
 
-    if constexpr (not alloc_traits::propagate_on_container_move_assignment::
-                      value) {
+    constexpr auto pocma =
+        alloc_traits::propagate_on_container_move_assignment::value;
+
+    if constexpr (not pocma) {
       if (m_alloc != other.m_alloc) {
-        safe_assign(other | std::views::as_rvalue, get_allocator());
+        safe_assign<pocma>(other | std::views::as_rvalue, get_allocator());
         other.clear();
         return *this;
       }
@@ -165,7 +227,7 @@ public:
   }
 
   constexpr void assign(size_type count, const T &value) {
-    assign_range(repeat_copy(count, value));
+    assign_range(detail::repeat_copy(count, value));
   }
 
   template <std::input_iterator Iterator, std::sentinel_for<Iterator> Sentinel>
@@ -178,10 +240,10 @@ public:
   template <std::ranges::input_range Range>
     requires std::assignable_from<reference,
                                   std::ranges::range_reference_t<Range>>
+  // NOLINTNEXTLINE(cppcoreguidelines-missing-std-forward)
   constexpr void assign_range(Range &&range) {
-    auto &&r = std::forward<Range>(range);
-    auto first = std::ranges::begin(r);
-    auto last = std::ranges::end(r);
+    auto first = std::ranges::begin(range);
+    auto last = std::ranges::end(range);
     auto d_first = begin();
     auto d_last = end();
 
@@ -193,7 +255,7 @@ public:
 
     d_first = insert(std::move(d_first), std::move(first), std::move(last));
 
-    erase(std::move(d_first), std::move(d_last));
+    erase(std::move(d_first), d_last);
   }
 
   [[nodiscard]] constexpr auto get_allocator() const noexcept
@@ -258,7 +320,7 @@ public:
 
   constexpr auto insert(const_iterator pos, size_type count, const T &value)
       -> iterator {
-    return insert_range(std::move(pos), repeat_copy(count, value));
+    return insert_range(std::move(pos), detail::repeat_copy(count, value));
   }
 
   template <std::input_iterator Iterator, std::sentinel_for<Iterator> Sentinel>
@@ -315,10 +377,12 @@ public:
     auto first = temp.begin();
     auto last = first;
 
-    using type = std::ranges::range_reference_t<Range>;
+    using reference_type = std::ranges::range_reference_t<Range>;
 
-    for (type &&value : std::forward<Range>(range)) {
-      last = temp.emplace(std::move(last), std::forward<type>(value));
+    for (reference_type &&reference : std::forward<Range>(range)) {
+      last = temp.emplace(std::move(last),
+                          std::forward<reference_type>(reference));
+      ++last;
     }
 
     splice(pos, std::move(first), std::move(last));
@@ -333,23 +397,109 @@ public:
 
   constexpr void pop_front() noexcept { erase(begin()); }
 
-  // TODO: resize
-  // TODO: swap
-  // TODO: merge
+  constexpr void resize(size_type count) {
+    resize_impl(count, detail::default_generator<T>{});
+  }
+
+  constexpr void resize(size_type count, const T &value) {
+    resize_impl(count, detail::copy_generator{std::addressof(value)});
+  }
+
+  constexpr void
+  swap(forward_list &other) noexcept(alloc_traits::is_always_equal::value) {
+    using std::swap;
+
+    if constexpr (alloc_traits::propagate_on_container_swap::value) {
+      swap(m_alloc, other.m_alloc);
+    }
+
+    swap(m_head, other.m_head);
+  }
+
+  constexpr void merge(forward_list &other) { merge(std::move(other)); }
+
+  constexpr void merge(forward_list &&other) {
+    merge(std::move(other), std::less{});
+  }
+
+  template <std::predicate<const T &, const T &> Compare>
+  constexpr void merge(forward_list &other, Compare comp) {
+    merge(std::move(other), std::move(comp));
+  }
+
+  template <std::predicate<const T &, const T &> Compare>
+  // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
+  constexpr void merge(forward_list &&other, Compare comp) {
+    if (this == std::addressof(other)) {
+      return;
+    }
+
+    auto d_first = cbegin();
+    auto d_last = cend();
+    auto first = other.cbegin();
+    auto last = other.cend();
+
+    while (d_first != d_last and first != last) {
+      if (comp(*first, *d_first)) {
+        splice(d_first, first);
+      } else {
+        ++d_first;
+      }
+    }
+
+    if (first != last) {
+      d_first.base().link() =
+          std::exchange(first.base().link(), node_pointer());
+    }
+  }
 
   constexpr void splice(const_iterator pos, const_iterator first,
                         const_iterator last) noexcept {
-    auto &first_link = first.base().link();
-    auto &last_link = last.base().link();
-    auto &pos_link = pos.base().link();
-
-    auto old_link = std::exchange(first_link, last_link);
-    last_link = std::exchange(pos_link, std::move(old_link));
+    splice_impl(pos.base().link(), first.base().link(), last.base().link());
   }
 
-  // TODO: remove
-  // TODO: remove_if
-  // TODO: reverse
+  constexpr void splice(const_iterator pos, const_iterator it) noexcept {
+    auto &first = it.base().link();
+    splice_impl(pos.base().link(), first, first->m_next);
+  }
+
+  constexpr auto remove(const T &value) -> size_type {
+    return remove_if(
+        [&](const T &element) -> bool { return element == value; });
+  }
+
+  template <std::predicate<const T &> UnaryPredicate>
+  constexpr auto remove_if(UnaryPredicate p) -> size_type {
+    size_type result = 0;
+    forward_list<T, Allocator> temp(get_allocator());
+    auto first = cbegin();
+    const auto last = cend();
+
+    while (first != last) {
+      if (p(*first)) {
+        temp.splice(temp.cbegin(), first);
+        ++result;
+      } else {
+        ++first;
+      }
+    }
+
+    return result;
+  }
+
+  constexpr void reverse() noexcept {
+    const auto first = begin();
+    const auto last = end();
+
+    if (auto it = first; it != last) {
+      ++it;
+
+      while (it != last) {
+        splice(first, it);
+      }
+    }
+  }
+
   // TODO: unique
   // TODO: sort
 };
@@ -364,23 +514,44 @@ template <std::ranges::input_range Range,
 forward_list(std::from_range_t, Range &&, Alloc = Alloc())
     -> forward_list<std::ranges::range_value_t<Range>, Alloc>;
 
-// TODO: operator==
-// TODO: operator<=>
-// TODO: swap
-// TODO: erase
-// TODO: erase_if
+template <class T, class Allocator>
+constexpr auto operator==(const forward_list<T, Allocator> &lhs,
+                          const forward_list<T, Allocator> &rhs) -> bool {
+  return std::ranges::equal(lhs, rhs);
+}
 
 template <class T, class Allocator>
-struct forward_list<T, Allocator>::node_type {
-  node_pointer m_next = node_pointer();
-  T m_value;
+constexpr auto operator<=>(const forward_list<T, Allocator> &lhs,
+                           const forward_list<T, Allocator> &rhs)
+    -> detail::synth_three_way_result_t<T> {
+  if constexpr (std::three_way_comparable<T>) {
+    return std::lexicographical_compare_three_way(lhs.begin(), {}, rhs.begin(),
+                                                  {});
+  } else {
+    return std::lexicographical_compare_three_way(
+        lhs.begin(), {}, rhs.begin(), {}, std::compare_weak_order_fallback);
+  }
+}
 
-  template <class... Args>
-    requires std::constructible_from<T, Args...>
-  constexpr node_type(Args &&...args) noexcept(
-      std::is_nothrow_constructible_v<T, Args...>)
-      : m_value(std::forward<Args>(args)...) {}
-};
+template <class T, class Allocator>
+constexpr void
+swap(forward_list<T, Allocator> &lhs,
+     forward_list<T, Allocator> &rhs) noexcept(noexcept(lhs.swap(rhs))) {
+  lhs.swap(rhs);
+}
+
+template <class T, class Allocator, class U = T>
+constexpr auto erase(forward_list<T, Allocator> &c, const U &value)
+    -> forward_list<T, Allocator>::size_type {
+  return c.remove_if(
+      [&](const T &element) -> bool { return element == value; });
+}
+
+template <class T, class Allocator, std::predicate<const T &> Pred>
+constexpr auto erase_if(forward_list<T, Allocator> &c, Pred pred)
+    -> forward_list<T, Allocator>::size_type {
+  return c.remove_if(std::move(pred));
+}
 
 template <class T, class Allocator>
 class forward_list<T, Allocator>::iterator {
@@ -444,3 +615,7 @@ using forward_list = pr::forward_list<T, std::pmr::polymorphic_allocator<T>>;
 
 } // namespace pmr
 } // namespace pr
+
+template <class T, class Allocator, class OtherAllocator>
+struct std::uses_allocator<pr::detail::node<T, Allocator>, OtherAllocator>
+    : std::uses_allocator<T, OtherAllocator> {};
