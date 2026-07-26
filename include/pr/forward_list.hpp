@@ -422,12 +422,12 @@ public:
     merge(std::move(other), std::less{});
   }
 
-  template <std::predicate<const T &, const T &> Compare>
+  template <std::strict_weak_order<const T &, const T &> Compare>
   constexpr void merge(forward_list &other, Compare comp) {
     merge(std::move(other), std::move(comp));
   }
 
-  template <std::predicate<const T &, const T &> Compare>
+  template <std::strict_weak_order<const T &, const T &> Compare>
   // NOLINTNEXTLINE(cppcoreguidelines-rvalue-reference-param-not-moved)
   constexpr void merge(forward_list &&other, Compare comp) {
     if (this == std::addressof(other)) {
