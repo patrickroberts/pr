@@ -4,6 +4,7 @@
 
 #include <expected>
 #include <ranges>
+#include <system_error>
 
 namespace pr {
 

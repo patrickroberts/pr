@@ -46,11 +46,12 @@ class offset_ptr
 
   alignas(Align) Rep offset{null_offset};
 
+  template <is::pointer_convertible_to<T> U>
   [[nodiscard]] auto offset_from([[maybe_unused]] non_null_t non_null,
-                                 T *other) const noexcept -> Rep {
+                                 U *other) const noexcept -> Rep {
     const auto offset =
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-        reinterpret_cast<std::uintptr_t>(other) -
+        reinterpret_cast<std::uintptr_t>(static_cast<T *>(other)) -
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
         reinterpret_cast<std::uintptr_t>(this);
 
@@ -61,12 +62,15 @@ class offset_ptr
     }
   }
 
-  [[nodiscard]] constexpr auto offset_from(T *other) const noexcept -> Rep {
+  template <is::pointer_convertible_to<T> U>
+  [[nodiscard]] constexpr auto offset_from(U *other) const noexcept -> Rep {
     return other ? offset_from(non_null, other) : null_offset;
   }
 
+  template <is::pointer_convertible_to<T> U, class D, class R, std::size_t A,
+            R N>
   [[nodiscard]] constexpr auto
-  offset_from(const offset_ptr &other) const noexcept -> Rep {
+  offset_from(const offset_ptr<U, D, R, A, N> &other) const noexcept -> Rep {
     return other ? offset_from(non_null, std::to_address(other)) : null_offset;
   }
 
