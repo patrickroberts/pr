@@ -59,7 +59,7 @@ public:
     return pointer(alloc_traits::allocate(*this, n));
   }
 
-  constexpr void deallocate(pointer p, size_type n)
+  constexpr void deallocate(const pointer &p, size_type n)
     requires detail::adaptable_with<alloc_ptr, pointer>
   {
     alloc_traits::deallocate(*this,

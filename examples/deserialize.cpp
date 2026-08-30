@@ -39,7 +39,7 @@ auto main(int argc, char **argv) -> int {
   // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
   auto *const base = view.data() + std::strtoull(arguments[2], nullptr, 10);
 
-  pr::with_context(*std::pmr::null_memory_resource(), [&] {
+  pr::with_context(*std::pmr::null_memory_resource(), [&] -> auto {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     auto *const ptr = reinterpret_cast<pr::vector<int> *>(base);
     std::println("{}", *ptr);

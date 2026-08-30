@@ -7,6 +7,8 @@ Checks: >
   portability-*,
   readability-*,
   -bugprone-exception-escape,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -portability-avoid-pragma-once,
   -readability-identifier-length,
 ExtraArgsBefore: [-D_GLIBCXX_DO_NOT_USE_BUILTIN_TRAITS]
 WarningsAsErrors: "*"

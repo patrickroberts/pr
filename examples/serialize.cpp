@@ -40,9 +40,11 @@ auto main(int argc, char **argv) -> int {
 
   const auto view = *std::move(maybe_view);
   auto resource = std::pmr::monotonic_buffer_resource{
-      view.data(), view.size(), std::pmr::null_memory_resource()};
+      view.data(),
+      static_cast<std::size_t>(view.size()), // LWG-3646
+      std::pmr::null_memory_resource()};
 
-  auto *const ptr = pr::with_context(resource, [&] {
+  auto *const ptr = pr::with_context(resource, [&] -> auto {
     pr::context_allocator<pr::vector<int>> alloc;
     return std::construct_at(alloc.allocate(1), std::from_range,
                              std::views::iota(0, values));
