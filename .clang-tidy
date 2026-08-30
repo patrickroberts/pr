@@ -6,6 +6,7 @@ Checks: >
   performance-*,
   portability-*,
   readability-*,
+  -bugprone-exception-escape,
   -readability-identifier-length,
 ExtraArgsBefore: [-D_GLIBCXX_DO_NOT_USE_BUILTIN_TRAITS]
 WarningsAsErrors: "*"

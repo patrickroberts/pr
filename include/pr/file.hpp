@@ -15,7 +15,7 @@ class file {
 
   constexpr explicit file(int fd) : descriptor(fd) {}
 
-  [[nodiscard]] static constexpr auto file_or_error_code_from(int fd)
+  [[nodiscard]] static constexpr auto file_or_error_code_from(int fd) noexcept
       -> std::expected<file, std::error_code> {
     if (fd == -1) {
       return std::unexpected(std::make_error_code(std::errc(errno)));
@@ -54,13 +54,14 @@ public:
     return std::exchange(descriptor, -1);
   }
 
-  [[nodiscard]] static auto try_open(const char *path, int flags)
+  [[nodiscard]] static auto try_open(const char *path, int flags) noexcept
       -> std::expected<file, std::error_code> {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     return file_or_error_code_from(open(path, flags));
   }
 
-  [[nodiscard]] static auto try_open(const char *path, int flags, mode_t mode)
+  [[nodiscard]] static auto try_open(const char *path, int flags,
+                                     mode_t mode) noexcept
       -> std::expected<file, std::error_code> {
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
     return file_or_error_code_from(open(path, flags, mode));

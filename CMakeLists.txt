@@ -15,6 +15,10 @@ if(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS)
 endif()
 
 add_library(patrickroberts INTERFACE)
-target_compile_features(patrickroberts INTERFACE cxx_std_20)
+target_compile_features(patrickroberts INTERFACE cxx_std_23)
+target_compile_options(patrickroberts INTERFACE -stdlib=libc++)
+target_link_options(patrickroberts INTERFACE -stdlib=libc++)
 target_include_directories(patrickroberts
                            INTERFACE "${PROJECT_SOURCE_DIR}/include")
+
+add_subdirectory(examples)
