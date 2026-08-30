@@ -3,11 +3,23 @@
 #include <memory>
 
 namespace pr {
+namespace detail {
+
+template <class AllocPtr, class FancyPtr>
+concept adaptable_with =
+    std::constructible_from<FancyPtr, AllocPtr> and requires(FancyPtr p) {
+      {
+        std::pointer_traits<AllocPtr>::pointer_to(*p)
+      } -> std::same_as<AllocPtr>;
+    };
+
+} // namespace detail
 
 template <class Allocator, class Pointer>
 // NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class fancy_allocator_adaptor : public Allocator {
   using alloc_traits = std::allocator_traits<Allocator>;
+  using alloc_ptr = alloc_traits::pointer;
   using ptr_traits = std::pointer_traits<Pointer>;
 
 public:
@@ -26,10 +38,6 @@ public:
                                 typename ptr_traits::template rebind<U>>;
   };
 
-  static_assert(
-      std::same_as<fancy_allocator_adaptor, typename rebind<value_type>::other>,
-      "Mismatched pointer type; rebind pointer type to value_type instead");
-
   fancy_allocator_adaptor() = default;
 
   fancy_allocator_adaptor(const fancy_allocator_adaptor &other) = default;
@@ -45,19 +53,17 @@ public:
       const fancy_allocator_adaptor<Alloc, Ptr> &other)
       : Allocator(static_cast<const Alloc &>(other)) {}
 
-  auto operator=(const fancy_allocator_adaptor &other)
-      -> fancy_allocator_adaptor & = default;
-
-  ~fancy_allocator_adaptor() = default;
-
-  [[nodiscard]] constexpr auto allocate(size_type n) -> pointer {
+  [[nodiscard]] constexpr auto allocate(size_type n) -> pointer
+    requires detail::adaptable_with<alloc_ptr, pointer>
+  {
     return pointer(alloc_traits::allocate(*this, n));
   }
 
-  constexpr void deallocate(pointer p, size_type n) {
-    using base_pointer = alloc_traits::pointer;
-    using base_traits = std::pointer_traits<base_pointer>;
-    alloc_traits::deallocate(*this, base_traits::pointer_to(*p), n);
+  constexpr void deallocate(pointer p, size_type n)
+    requires detail::adaptable_with<alloc_ptr, pointer>
+  {
+    alloc_traits::deallocate(*this,
+                             std::pointer_traits<alloc_ptr>::pointer_to(*p), n);
   }
 
   template <class T, class... Args>
@@ -74,7 +80,14 @@ public:
     return alloc_traits::max_size(*this);
   }
 
+  [[nodiscard]] constexpr auto
+  operator==(const fancy_allocator_adaptor &other) const noexcept -> bool {
+    return static_cast<const Allocator &>(*this) ==
+           static_cast<const Allocator &>(other);
+  }
+
   template <class Alloc, class Ptr>
+    requires std::equality_comparable_with<Allocator, Alloc>
   [[nodiscard]] constexpr auto
   operator==(const fancy_allocator_adaptor<Alloc, Ptr> &other) const noexcept
       -> bool {
