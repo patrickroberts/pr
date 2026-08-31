@@ -29,9 +29,8 @@ auto main(int argc, char **argv) -> int {
 
   const auto file = *std::move(maybe_file);
   ftruncate(*file, bytes);
-  auto maybe_view = pr::mapping::try_mmap(
-      nullptr, bytes,
-      {.prot = PROT_READ | PROT_WRITE, .flags = MAP_SHARED, .fd = *file});
+  auto maybe_view =
+      pr::mapping::try_mmap(nullptr, bytes, {.flags = MAP_SHARED, .fd = *file});
 
   if (not maybe_view) {
     std::println(stderr, "{}", maybe_view.error().message());
@@ -44,14 +43,16 @@ auto main(int argc, char **argv) -> int {
       static_cast<std::size_t>(view.size()), // LWG-3646
       std::pmr::null_memory_resource()};
 
-  auto *const ptr = pr::with_context(resource, [&] -> auto {
+  auto *const base = pr::with_context(resource, [&] -> auto {
     pr::context_allocator<pr::vector<int>> alloc;
-    return std::construct_at(alloc.allocate(1), std::from_range,
-                             std::views::iota(0, values));
+    auto *const ptr = std::construct_at(alloc.allocate(1), std::from_range,
+                                        std::views::iota(0, values));
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
+    return reinterpret_cast<std::byte *>(ptr);
   });
 
-  // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
-  std::println("{}", reinterpret_cast<std::byte *>(ptr) - view.data());
+  const auto offset = base - view.data();
+  std::println("{}", offset);
 
   return EXIT_SUCCESS;
 }

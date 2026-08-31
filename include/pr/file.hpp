@@ -26,7 +26,7 @@ class file {
 
 public:
   constexpr file(file &&other) noexcept
-      : descriptor(std::move(other).release()) {}
+      : descriptor(std::exchange(other.descriptor, -1)) {}
 
   constexpr auto operator=(file &&other) noexcept -> file & {
     std::destroy_at(this);
@@ -35,23 +35,19 @@ public:
   }
 
   constexpr ~file() {
-    if (not *this) {
+    if (valueless_after_move()) {
       return;
     }
 
     close(**this);
   }
 
-  [[nodiscard]] constexpr explicit operator bool() const noexcept {
-    return descriptor >= 0;
+  [[nodiscard]] constexpr auto valueless_after_move() const noexcept -> bool {
+    return descriptor == -1;
   }
 
   [[nodiscard]] constexpr auto operator*() const noexcept -> int {
     return descriptor;
-  }
-
-  [[nodiscard]] constexpr auto release() && noexcept -> int {
-    return std::exchange(descriptor, -1);
   }
 
   [[nodiscard]] static auto try_open(const char *path, int flags) noexcept

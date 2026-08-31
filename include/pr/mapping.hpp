@@ -17,7 +17,7 @@ class mapping : public std::ranges::view_interface<mapping> {
 
 public:
   constexpr mapping(mapping &&other) noexcept
-      : memory(std::move(other).release()) {}
+      : memory(std::exchange(other.memory, {})) {}
 
   constexpr auto operator=(mapping &&other) noexcept -> mapping & {
     std::destroy_at(this);
@@ -39,10 +39,6 @@ public:
 
   [[nodiscard]] constexpr auto end() const noexcept -> std::byte * {
     return std::to_address(memory.end());
-  }
-
-  [[nodiscard]] constexpr auto release() && noexcept -> std::span<std::byte> {
-    return std::exchange(memory, {});
   }
 
   struct configuration {
