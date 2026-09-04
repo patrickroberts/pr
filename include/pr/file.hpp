@@ -39,14 +39,14 @@ public:
       return;
     }
 
-    close(**this);
+    close(native_handle());
   }
 
   [[nodiscard]] constexpr auto valueless_after_move() const noexcept -> bool {
     return descriptor == -1;
   }
 
-  [[nodiscard]] constexpr auto operator*() const noexcept -> int {
+  [[nodiscard]] constexpr auto native_handle() const noexcept -> int {
     return descriptor;
   }
 
@@ -63,5 +63,27 @@ public:
     return file_or_error_code_from(open(path, flags, mode));
   }
 };
+
+[[nodiscard]] auto try_ftruncate(const file &fd, off_t length) noexcept
+    -> std::expected<void, std::error_code> {
+  const auto result = ::ftruncate(fd.native_handle(), length);
+
+  if (result == -1) {
+    return std::unexpected(std::make_error_code(std::errc(errno)));
+  }
+
+  return {};
+}
+
+[[nodiscard]] auto try_lseek(const file &fd, off_t offset, int whence) noexcept
+    -> std::expected<off_t, std::error_code> {
+  const auto result = ::lseek(fd.native_handle(), offset, whence);
+
+  if (result == -1) {
+    return std::unexpected(std::make_error_code(std::errc(errno)));
+  }
+
+  return result;
+}
 
 } // namespace pr

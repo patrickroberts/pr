@@ -4,6 +4,7 @@
 #include <pr/fancy_allocator_adaptor.hpp>
 #include <pr/offset_ptr.hpp>
 
+#include <span>
 #include <vector>
 
 namespace pr {
@@ -14,5 +15,9 @@ using offset_allocator =
 
 template <class T>
 using vector = std::vector<T, offset_allocator<T>>;
+
+using arg = const char *;
+
+using args = std::span<const arg>;
 
 } // namespace pr
