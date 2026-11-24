@@ -6,6 +6,7 @@ project(
   LANGUAGES CXX)
 
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 option(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS
        "Install pre-commit hooks during configuration" OFF)

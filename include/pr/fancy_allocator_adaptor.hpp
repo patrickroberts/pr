@@ -44,13 +44,13 @@ public:
 
   template <class Alloc>
     requires std::constructible_from<Allocator, Alloc>
-  constexpr fancy_allocator_adaptor(Alloc &&other)
+  constexpr explicit(false) fancy_allocator_adaptor(Alloc &&other)
       : Allocator(std::forward<Alloc>(other)) {}
 
   template <class Alloc, class Ptr>
     requires std::constructible_from<Allocator, const Alloc &>
-  constexpr fancy_allocator_adaptor(
-      const fancy_allocator_adaptor<Alloc, Ptr> &other)
+  constexpr explicit(false)
+      fancy_allocator_adaptor(const fancy_allocator_adaptor<Alloc, Ptr> &other)
       : Allocator(static_cast<const Alloc &>(other)) {}
 
   [[nodiscard]] constexpr auto allocate(size_type n) -> pointer

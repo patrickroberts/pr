@@ -4,6 +4,7 @@
 #include <optional>
 #include <type_traits>
 
+// NOLINTNEXTLINE(cppcoreguidelines-macro-usage)
 #define PR_MAYBE(...)                                                          \
   ({                                                                           \
     auto &&_result = (__VA_ARGS__);                                            \

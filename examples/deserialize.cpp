@@ -32,7 +32,7 @@ auto run(pr::args args) -> std::expected<void, std::error_code> {
 
 } // namespace
 
-auto main(int argc, char **argv) -> int {
+auto main(int argc, const pr::arg argv[]) -> int {
   if (argc != 3) {
     std::println(stderr, "Usage: {} [input_file] [base_offset]", *argv);
     return EXIT_FAILURE;

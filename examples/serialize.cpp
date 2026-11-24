@@ -13,7 +13,7 @@
 namespace {
 
 auto run(pr::args args) -> std::expected<void, std::error_code> {
-  const auto values = PR_MAYBE(pr::try_from_chars<std::size_t>(args[2]));
+  const auto values = PR_MAYBE(pr::try_from_chars<int>(args[2]));
   const auto bytes = sizeof(pr::vector<int>) + (values * sizeof(int));
   const auto file = PR_MAYBE(pr::file::try_open(
       args[1], O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
@@ -33,9 +33,8 @@ auto run(pr::args args) -> std::expected<void, std::error_code> {
   // fixed location.
   auto *const base = pr::with_context(resource, [&] -> auto {
     pr::context_allocator<pr::vector<int>> alloc;
-    auto *const ptr =
-        std::construct_at(alloc.allocate(1), std::from_range,
-                          std::views::iota(0, static_cast<int>(values)));
+    auto *const ptr = std::construct_at(alloc.allocate(1), std::from_range,
+                                        std::views::iota(0, values));
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast)
     return reinterpret_cast<std::byte *>(ptr);
   });
@@ -48,7 +47,7 @@ auto run(pr::args args) -> std::expected<void, std::error_code> {
 
 } // namespace
 
-auto main(int argc, char **argv) -> int {
+auto main(int argc, const pr::arg argv[]) -> int {
   if (argc != 3) {
     std::println(stderr, "Usage: {} [output_file] [values]", *argv);
     return EXIT_FAILURE;

@@ -87,7 +87,7 @@ public:
 
   offset_ptr() = default;
 
-  constexpr offset_ptr(std::nullptr_t) noexcept {}
+  constexpr explicit(false) offset_ptr(std::nullptr_t) noexcept {}
 
   constexpr explicit offset_ptr(
       is::pointer_convertible_to<T> auto *other) noexcept
