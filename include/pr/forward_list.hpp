@@ -17,7 +17,7 @@ struct node {
 
   template <class... Args>
     requires std::constructible_from<T, Args...>
-  constexpr node(Args &&...args) noexcept(
+  constexpr explicit node(Args &&...args) noexcept(
       std::is_nothrow_constructible_v<T, Args...>)
       : m_value(std::forward<Args>(args)...) {}
 };
@@ -326,8 +326,8 @@ public:
   template <std::input_iterator Iterator, std::sentinel_for<Iterator> Sentinel>
   constexpr auto insert(const_iterator pos, Iterator first, Sentinel last)
       -> iterator {
-    return insert_range(std::move(pos), std::ranges::subrange{std::move(first),
-                                                              std::move(last)});
+    std::ranges::subrange range{std::move(first), std::move(last)};
+    return insert_range(std::move(pos), std::move(range));
   }
 
   constexpr auto insert(const_iterator pos, std::initializer_list<T> ilist)

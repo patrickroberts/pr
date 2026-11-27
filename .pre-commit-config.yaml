@@ -4,3 +4,4 @@ repos:
     hooks:
       - id: clang-format
       - id: clang-tidy
+        exclude: ^src/.*_windows\.(cpp|hpp)$

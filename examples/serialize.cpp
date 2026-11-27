@@ -16,12 +16,15 @@ auto run(pr::args args) -> std::expected<void, std::error_code> {
   const auto values = PR_MAYBE(pr::try_from_chars<int>(args[2]));
   const auto bytes = sizeof(pr::vector<int>) + (values * sizeof(int));
   const auto file = PR_MAYBE(pr::file::try_open(
-      args[1], O_CREAT | O_RDWR, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH));
+      args[1], {.access = pr::file::access_mode::read_write,
+                .creation = pr::file::creation_mode::open_or_create}));
 
-  PR_MAYBE(pr::try_ftruncate(file, bytes));
+  PR_MAYBE(pr::try_set_length(file, bytes));
 
-  const auto view = PR_MAYBE(pr::mapping::try_mmap(
-      nullptr, bytes, {.flags = MAP_SHARED, .fd = file.native_handle()}));
+  const auto view = PR_MAYBE(
+      pr::mapping::try_mmap(nullptr, bytes,
+                            {.sharing = pr::mapping::sharing_mode::shared,
+                             .handle = std::addressof(file)}));
   auto resource = std::pmr::monotonic_buffer_resource{
       view.data(),
       static_cast<std::size_t>(view.size()), // LWG-3646

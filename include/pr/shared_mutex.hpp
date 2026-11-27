@@ -1,16 +1,14 @@
 #pragma once
 
-#include <linux/futex.h>
-#include <sys/syscall.h>
-#include <unistd.h>
-
 #include <atomic>
 #include <cstdint>
-#include <ctime>
 #include <limits>
 #include <utility>
 
 namespace pr {
+
+void wait(std::uint32_t *address, std::uint32_t expected);
+void wake_all(std::uint32_t *address);
 
 class shared_mutex {
   using value_type = std::uint32_t;
@@ -29,17 +27,6 @@ class shared_mutex {
 
   value_type value{count_mask};
 
-  void futex_wait(value_type expected) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    syscall(SYS_futex, std::addressof(value), FUTEX_WAIT, expected,
-            static_cast<const timespec *>(nullptr));
-  }
-
-  void futex_wake(int waiters) {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    syscall(SYS_futex, std::addressof(value), FUTEX_WAKE, waiters);
-  }
-
   // assumes wait_count >= count
   void wait_acquire(wait_count_t wait_count, value_type count) {
     const reference ref{value};
@@ -54,7 +41,7 @@ class shared_mutex {
           actual |= wait_flag;
         }
 
-        futex_wait(actual);
+        pr::wait(std::addressof(value), actual);
         actual = ref.load(std::memory_order_relaxed);
       }
 
@@ -96,7 +83,7 @@ class shared_mutex {
 
     // clear wait flag
     ref.fetch_and(count_mask, std::memory_order_relaxed);
-    futex_wake(std::numeric_limits<int>::max());
+    pr::wake_all(std::addressof(value));
   }
 
 public:

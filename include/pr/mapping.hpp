@@ -1,52 +1,68 @@
 #pragma once
 
-#include <sys/mman.h>
+#include <pr/file.hpp>
 
+#include <cstddef>
+#include <cstdint>
 #include <expected>
+#include <memory>
 #include <ranges>
+#include <span>
 #include <system_error>
+#include <utility>
 
 namespace pr {
 
-// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class mapping : public std::ranges::view_interface<mapping> {
   std::span<std::byte> memory;
 
-  constexpr explicit mapping(std::byte *addr, std::size_t len) noexcept
+  explicit mapping(std::byte *addr, std::size_t len) noexcept
       : memory(addr, len) {}
 
-public:
-  constexpr mapping(mapping &&other) noexcept
-      : memory(std::exchange(other.memory, {})) {}
+  void try_unmap() const noexcept;
 
-  constexpr auto operator=(mapping &&other) noexcept -> mapping & {
-    std::destroy_at(this);
-    std::construct_at(this, std::move(other));
+public:
+  enum class access_mode : std::uint8_t {
+    read,
+    write,
+    read_write,
+  };
+
+  enum class sharing_mode : std::uint8_t {
+    shared,
+    private_copy,
+  };
+
+  struct configuration {
+    access_mode access{access_mode::read_write};
+    sharing_mode sharing{sharing_mode::private_copy};
+    const file *handle{};
+    std::uint64_t offset{};
+  };
+
+  mapping(const mapping &) = delete;
+  mapping(mapping &&other) noexcept : memory(std::exchange(other.memory, {})) {}
+
+  auto operator=(const mapping &) -> mapping & = delete;
+  auto operator=(mapping &&other) noexcept -> mapping & {
+    if (this == std::addressof(other)) {
+      return *this;
+    }
+
+    try_unmap();
+    memory = std::exchange(other.memory, {});
     return *this;
   }
 
-  constexpr ~mapping() {
-    if (not *this) {
-      return;
-    }
+  ~mapping() { try_unmap(); }
 
-    munmap(data(), size());
-  }
-
-  [[nodiscard]] constexpr auto begin() const noexcept -> std::byte * {
+  [[nodiscard]] auto begin() const noexcept -> std::byte * {
     return std::to_address(memory.begin());
   }
 
-  [[nodiscard]] constexpr auto end() const noexcept -> std::byte * {
+  [[nodiscard]] auto end() const noexcept -> std::byte * {
     return std::to_address(memory.end());
   }
-
-  struct configuration {
-    int prot = PROT_READ | PROT_WRITE;
-    int flags = MAP_ANONYMOUS | MAP_PRIVATE;
-    int fd = -1;
-    off_t offset = 0;
-  };
 
   [[nodiscard]] static auto try_mmap(void *addr, std::size_t len) noexcept
       -> std::expected<mapping, std::error_code> {
@@ -55,15 +71,7 @@ public:
 
   [[nodiscard]] static auto try_mmap(void *addr, std::size_t len,
                                      configuration config) noexcept
-      -> std::expected<mapping, std::error_code> {
-    addr = mmap(addr, len, config.prot, config.flags, config.fd, config.offset);
-
-    if (addr == MAP_FAILED) {
-      return std::unexpected(std::make_error_code(std::errc(errno)));
-    }
-
-    return mapping{static_cast<std::byte *>(addr), len};
-  }
+      -> std::expected<mapping, std::error_code>;
 };
 
 } // namespace pr

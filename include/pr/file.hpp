@@ -1,89 +1,88 @@
 #pragma once
 
-#include <fcntl.h>
-#include <unistd.h>
+#ifndef PR_FILE_NATIVE_HANDLE_TYPE
+#error "PR_FILE_NATIVE_HANDLE_TYPE must be defined by the build system"
+#endif
+#ifndef PR_FILE_INVALID_NATIVE_HANDLE
+#error "PR_FILE_INVALID_NATIVE_HANDLE must be defined by the build system"
+#endif
 
+#include <cstdint>
 #include <expected>
+#include <filesystem>
 #include <system_error>
 #include <utility>
 
 namespace pr {
 
-// NOLINTNEXTLINE(cppcoreguidelines-special-member-functions)
 class file {
-  int descriptor;
+  using native_handle_type = PR_FILE_NATIVE_HANDLE_TYPE;
+  static constexpr native_handle_type invalid_native_handle =
+      PR_FILE_INVALID_NATIVE_HANDLE;
 
-  constexpr explicit file(int fd) : descriptor(fd) {}
+  native_handle_type handle;
 
-  [[nodiscard]] static constexpr auto file_or_error_code_from(int fd) noexcept
-      -> std::expected<file, std::error_code> {
-    if (fd == -1) {
-      return std::unexpected(std::make_error_code(std::errc(errno)));
-    }
+  explicit file(native_handle_type handle) noexcept : handle(handle) {}
 
-    return file{fd};
-  }
+  void try_close() const noexcept;
 
 public:
-  constexpr file(file &&other) noexcept
-      : descriptor(std::exchange(other.descriptor, -1)) {}
+  enum class access_mode : std::uint8_t {
+    read,
+    write,
+    read_write,
+  };
 
-  constexpr auto operator=(file &&other) noexcept -> file & {
-    std::destroy_at(this);
-    std::construct_at(this, std::move(other));
+  enum class creation_mode : std::uint8_t {
+    open_existing,
+    open_or_create,
+    create_new,
+  };
+
+  struct open_options {
+    access_mode access{access_mode::read};
+    creation_mode creation{creation_mode::open_existing};
+  };
+
+  file(const file &) = delete;
+  file(file &&other) noexcept
+      : handle(std::exchange(other.handle, invalid_native_handle)) {}
+
+  auto operator=(const file &) -> file & = delete;
+  auto operator=(file &&other) noexcept -> file & {
+    if (this == std::addressof(other)) {
+      return *this;
+    }
+
+    try_close();
+    handle = std::exchange(other.handle, invalid_native_handle);
     return *this;
   }
 
-  constexpr ~file() {
-    if (valueless_after_move()) {
-      return;
-    }
+  ~file() { try_close(); }
 
-    close(native_handle());
+  [[nodiscard]] auto valueless_after_move() const noexcept -> bool {
+    return handle == invalid_native_handle;
   }
 
-  [[nodiscard]] constexpr auto valueless_after_move() const noexcept -> bool {
-    return descriptor == -1;
+  [[nodiscard]] auto native_handle() const noexcept -> native_handle_type {
+    return handle;
   }
 
-  [[nodiscard]] constexpr auto native_handle() const noexcept -> int {
-    return descriptor;
-  }
-
-  [[nodiscard]] static auto try_open(const char *path, int flags) noexcept
+  [[nodiscard]] static auto try_open(const std::filesystem::path &path) noexcept
       -> std::expected<file, std::error_code> {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    return file_or_error_code_from(open(path, flags));
+    return try_open(path, {});
   }
 
-  [[nodiscard]] static auto try_open(const char *path, int flags,
-                                     mode_t mode) noexcept
-      -> std::expected<file, std::error_code> {
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg)
-    return file_or_error_code_from(open(path, flags, mode));
-  }
+  [[nodiscard]] static auto try_open(const std::filesystem::path &path,
+                                     open_options options) noexcept
+      -> std::expected<file, std::error_code>;
 };
 
-[[nodiscard]] auto try_ftruncate(const file &fd, off_t length) noexcept
-    -> std::expected<void, std::error_code> {
-  const auto result = ::ftruncate(fd.native_handle(), length);
+[[nodiscard]] auto try_set_length(const file &fd, std::int64_t length) noexcept
+    -> std::expected<void, std::error_code>;
 
-  if (result == -1) {
-    return std::unexpected(std::make_error_code(std::errc(errno)));
-  }
-
-  return {};
-}
-
-[[nodiscard]] auto try_lseek(const file &fd, off_t offset, int whence) noexcept
-    -> std::expected<off_t, std::error_code> {
-  const auto result = ::lseek(fd.native_handle(), offset, whence);
-
-  if (result == -1) {
-    return std::unexpected(std::make_error_code(std::errc(errno)));
-  }
-
-  return result;
-}
+[[nodiscard]] auto try_seek_end(const file &fd) noexcept
+    -> std::expected<std::int64_t, std::error_code>;
 
 } // namespace pr

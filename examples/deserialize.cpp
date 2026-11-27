@@ -15,10 +15,13 @@ namespace {
 
 auto run(pr::args args) -> std::expected<void, std::error_code> {
   const auto offset = PR_MAYBE(pr::try_from_chars<std::ptrdiff_t>(args[2]));
-  const auto file = PR_MAYBE(pr::file::try_open(args[1], O_RDWR));
-  const auto bytes = PR_MAYBE(pr::try_lseek(file, 0, SEEK_END));
-  const auto view = PR_MAYBE(pr::mapping::try_mmap(
-      nullptr, bytes, {.flags = MAP_SHARED, .fd = file.native_handle()}));
+  const auto file = PR_MAYBE(pr::file::try_open(
+      args[1], {.access = pr::file::access_mode::read_write}));
+  const auto bytes = PR_MAYBE(pr::try_seek_end(file));
+  const auto view = PR_MAYBE(
+      pr::mapping::try_mmap(nullptr, bytes,
+                            {.sharing = pr::mapping::sharing_mode::shared,
+                             .handle = std::addressof(file)}));
   auto *const base = std::next(view.data(), offset);
 
   pr::with_context(*std::pmr::null_memory_resource(), [&] -> auto {
