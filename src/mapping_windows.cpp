@@ -79,7 +79,11 @@ auto pr::mapping::try_mmap(void *addr, std::size_t len,
   }
 
   const auto protection =
-      PR_MAYBE(pr::try_get_mapping_protection(config.access, config.sharing));
+      pr::try_get_mapping_protection(config.access, config.sharing);
+
+  if (not protection) {
+    return std::unexpected{protection.error()};
+  }
 
   if (config.handle == nullptr and config.offset != 0) {
     return pr::unexpected(std::errc::invalid_argument);
@@ -89,7 +93,7 @@ auto pr::mapping::try_mmap(void *addr, std::size_t len,
   const auto [file_handle, max_size] =
       pr::get_file_handle_and_max_size(config.handle, len);
   const auto mapping_handle =
-      CreateFileMappingW(file_handle, nullptr, protection,
+      CreateFileMappingW(file_handle, nullptr, *protection,
                          static_cast<DWORD>(max_size >> dword_bits),
                          static_cast<DWORD>(max_size), nullptr);
 
@@ -97,7 +101,7 @@ auto pr::mapping::try_mmap(void *addr, std::size_t len,
     return std::unexpected{pr::last_error()};
   }
 
-  const auto desired_access = get_mapping_desired_access(protection);
+  const auto desired_access = get_mapping_desired_access(*protection);
   addr = MapViewOfFile(mapping_handle, desired_access,
                        static_cast<DWORD>(config.offset >> dword_bits),
                        static_cast<DWORD>(config.offset), len);

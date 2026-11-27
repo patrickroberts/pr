@@ -10,6 +10,7 @@ set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 option(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS
        "Install pre-commit hooks during configuration" OFF)
+option(PATRICK_ROBERTS_BUILD_EXAMPLES "Build example programs" ON)
 
 if(PATRICK_ROBERTS_INSTALL_PRE_COMMIT_HOOKS)
   include(cmake/pre-commit.cmake)
@@ -66,4 +67,6 @@ if(DEFINED shared_mutex_source)
   add_pr_library(patrickroberts_shared_mutex "${shared_mutex_source}")
 endif()
 
-add_subdirectory(examples)
+if(PATRICK_ROBERTS_BUILD_EXAMPLES)
+  add_subdirectory(examples)
+endif()

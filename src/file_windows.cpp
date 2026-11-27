@@ -55,13 +55,22 @@ void pr::file::try_close() const noexcept {
 auto pr::file::try_open(const std::filesystem::path &path,
                         open_options options) noexcept
     -> std::expected<file, std::error_code> {
-  const auto desired_access = PR_MAYBE(pr::try_get_file_access(options.access));
-  const auto creation_disposition =
-      PR_MAYBE(pr::try_get_file_creation(options.creation));
+  const auto desired_access = pr::try_get_file_access(options.access);
+
+  if (not desired_access) {
+    return std::unexpected{desired_access.error()};
+  }
+
+  const auto creation_disposition = pr::try_get_file_creation(options.creation);
+
+  if (not creation_disposition) {
+    return std::unexpected{creation_disposition.error()};
+  }
+
   const auto handle = CreateFileW(
-      path.c_str(), desired_access,
+      path.c_str(), *desired_access,
       FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
-      creation_disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
+      *creation_disposition, FILE_ATTRIBUTE_NORMAL, nullptr);
 
   if (handle == INVALID_HANDLE_VALUE) {
     return std::unexpected{pr::last_error()};
